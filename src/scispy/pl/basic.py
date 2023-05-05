@@ -13,8 +13,9 @@ from matplotlib import pyplot as plt
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Polygon as mplPolygon
 from observable_jupyter import embed
-from scinsitpy.io.basic import get_palette, load_bounds_pixel
 from skimage import exposure, img_as_float
+
+from scispy.io.basic import get_palette, load_bounds_pixel
 
 
 def view_region(
