@@ -1,0 +1,23 @@
+{
+  "template": "https://github.com/scverse/cookiecutter-scverse",
+  "commit": "6a4338030e0c83a9034d607ed66abeff83e18840",
+  "checkout": null,
+  "context": {
+    "cookiecutter": {
+      "project_name": "scispy",
+      "package_name": "scispy",
+      "project_description": "single-cell in-situ python package",
+      "author_full_name": "kevin lebrigand",
+      "author_email": "lebrigandk@gmail.com",
+      "github_user": "bfxomics",
+      "project_repo": "https://github.com/bfxomics/scispy",
+      "license": "MIT License",
+      "_copy_without_render": [
+        ".github/workflows/**.yaml",
+        "docs/_templates/autosummary/**.rst"
+      ],
+      "_template": "https://github.com/scverse/cookiecutter-scverse"
+    }
+  },
+  "directory": null
+}
