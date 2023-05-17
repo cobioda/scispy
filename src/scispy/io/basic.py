@@ -262,7 +262,8 @@ def get_palette(color_key: str) -> dict:
         palette = {"Endothelial": "#00A087FF", "Epithelial": "#3C5488FF", "Immune": "#E64B35FF", "Stroma": "#7E6148FF"}
     elif color_key == "celltype":
         palette = {
-            "Basal": "#E41A1C",
+            # htap
+            # "Basal": "#E41A1C",
             "PNEC": "#377EB8",
             "Pre-TB-SC": "#4DAF4A",
             "TRB-SC": "#984EA3",
@@ -300,6 +301,35 @@ def get_palette(color_key: str) -> dict:
             "AdvFibro": "#5e1e33",
             "AlvFibro": "#f2ae5a",
             "MyoFibro": "#e37e12",
+            # paolo
+            "Cartilages": "#414535",
+            "Stromal": "#618985",
+            "Proliferating stromal": "#96bbbb",
+            "Pericytes": "#c19875",
+            "Proliferating pericytes": "#f2e3bc",
+            "Respiratory Ciliated": "#f5b840",
+            "Deuterosomal": "#e68d2d",
+            "Duct/MUC5AC+": "#ebcb73",
+            "Basal": "#12374a",
+            "Proliferating basal": "#3c979a",
+            "Proliferating sustentacular": "#bad99a",
+            "Sustentacular": "#5f7847",
+            "Olfactory sensory neurons": "#a3a380",
+            "Neurons": "#096d2f",
+            "Olfactory sensory neurons GNRH1+ISL1+": "#ff9f1c",
+            "Excitatory neurons": "#bb8588",
+            "Proliferating excitatory neurons": "#d8a48f",
+            "Myeloids": "#8595e1",
+            "Proliferating myeloids": "#c6dec7",
+            "ENS glia": "#fe5d9f",
+            "Proliferating ENS glia": "#f686bd",
+            "Skeletal muscle": "#548c2f",
+            "Satellites": "#104911",
+            "Proliferating endothelial": "#89b0ae",
+            "Vascular endothelial": "#555b6e",
+            "Lymphatic endothelial": "#2ec4b6",
+            "Proliferating lymphatic endothelial": "#2ec4b6",
+            "NA": "#ffffff",
         }
 
     return palette

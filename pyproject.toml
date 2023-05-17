@@ -38,6 +38,7 @@ dependencies = [
     "clustergrammer2",
     "scikit-image",
     "scvi-tools",
+    "torch==1.13.1",
     # for debug logging (referenced from the issue template)
     "session-info"
 ]
