@@ -16,12 +16,11 @@ from matplotlib.patches import Polygon as mplPolygon
 from observable_jupyter import embed
 from skimage import exposure, img_as_float
 
-from scispy.io.basic import get_palette, load_bounds_pixel
+from scispy.io.basic import load_bounds_pixel
 
 
 def view_region(
     adata: an.AnnData,
-    library_id: str,
     color_key: str,
     geneNames: tuple,
     pt_size: float,
@@ -29,27 +28,31 @@ def view_region(
     y: int,
     size_x: int,
     size_y: int,
+    show_loc: bool = False,
+    lw: float = 1,
+    image_cmap: str = "viridis",
+    fill_polygons: bool = True,
     metafilt: str = None,
     metafiltvals: str = None,
     all_transcripts: bool = False,
     noimage: bool = False,
     save: bool = False,
-    cat_colors: dict = None,
+    mypal: dict = None,
+    highlighttop: int = None,
     figsize: tuple = (8, 8),
 ) -> an.AnnData:
-    """Scinsit crop region plot.
+    """Scis crop region plot.
 
     Parameters
     ----------
     adata
         Anndata object.
-    library_id
-        library id.
 
     Returns
     -------
     Return the AnnData object of the crop region.
     """
+    library_id = adata.obs.library_id.cat.categories.tolist()[0]
     img = sq.im.ImageContainer(adata.uns["spatial"][library_id]["images"]["hires"], library_id=library_id)
 
     if (img.shape[0] < y + size_y) or (img.shape[1] < x + size_x):
@@ -64,8 +67,10 @@ def view_region(
             return adata_crop
         else:
             if metafilt is not None:
-                adata_crop.obs[~adata_crop.obs[metafilt].isin(metafiltvals)][metafilt] = "NA"
-                # adata_crop = adata_crop.obs[][adata_crop.obs[metafilt].isin(metafiltvals)]
+                adata_crop = adata_crop[adata_crop.obs[metafilt].isin(metafiltvals)]
+            if highlighttop is not None:
+                toplist = adata_crop.obs[color_key].value_counts().keys().tolist()[0:highlighttop]
+                adata_crop = adata_crop[adata_crop.obs[color_key].isin(toplist)]
 
             print(adata_crop.shape[0], "cells to plot")
 
@@ -94,39 +99,52 @@ def view_region(
 
             # generate colors for categories by plotting
             cats = adata_crop.obs[color_key].cat.categories.tolist()
-            colors = list(adata_crop.uns[color_key + "_colors"])
-            if cat_colors is None:
-                cat_colors = dict(zip(cats, colors))
-            ser_color = pd.Series(cat_colors)
+            if mypal is None:
+                colors = list(adata_crop.uns[color_key + "_colors"])
+                mypal = dict(zip(cats, colors))
 
-            fig, axs = plt.subplots(nrows=1, ncols=2, figsize=figsize, gridspec_kw={"width_ratios": [1, 3]})
+            ser_color = pd.Series(mypal)
+
+            if noimage is True:
+                plt.style.use("dark_background")
+
+            fig, axs = plt.subplots(nrows=1, ncols=2, figsize=figsize, gridspec_kw={"width_ratios": [1, 10]})
 
             # fig, ax = plt.subplots(figsize=figsize)
-            sq.pl.spatial_scatter(adata, color=color_key, shape=None, size=1, ax=axs[0])
-            axs[0].add_patch(patches.Rectangle((x, y), size_x, size_y, fill=False, edgecolor="blue"))
-            axs[0].get_legend().remove()
-            axs[0].set_title("")
+            # sns.scatterplot(x='x_pix', y='y_pix', data=adata_crop.obs, s=0.5, hue = color_key, ax=axs[0])
+            # sq.pl.spatial_scatter(adata, color=color_key, shape=None, size=1, ax=axs[0], palette=ListedColormap(list(colors.values())))
+
+            if show_loc is True:
+                sq.pl.spatial_scatter(adata, color=color_key, shape=None, size=1, ax=axs[0])
+
+            axs[0].add_patch(
+                patches.Rectangle((x, y), size_x, size_y, ls="--", edgecolor="black", facecolor="none", linewidth=1)
+            )
+            # axs[0].get_legend().remove()
+            title = library_id + "[x=" + str(x) + ",y=" + str(y) + "]"
+            axs[0].set_title(title, fontsize=6)
+            # axs[0].grid(True)
             axs[0].get_xaxis().set_visible(False)
             axs[0].get_yaxis().set_visible(False)
+            axs[0].plot(x, y, "go")
 
             if noimage is False:
-                crop1.show(layer="image", ax=axs[1])
+                crop1.show(layer="image", ax=axs[1], cmap=image_cmap)
 
-            # plot cells
+            # -- 1. plot cells --#
             pts = adata_crop.obs[["x_pix", "y_pix", color_key]]
             pts.x_pix -= x
             pts.y_pix -= y
             axs[1] = sns.scatterplot(
-                x="x_pix", y="y_pix", s=0, alpha=0.5, edgecolors=color_key, data=pts, hue=color_key, palette=cat_colors
+                x="x_pix", y="y_pix", s=0, alpha=0.5, edgecolors=color_key, data=pts, hue=color_key, palette=mypal
             )
 
-            # plot polygons
+            # -- 2. plot polygons fill --#
             polygons = [mplPolygon(polygon_data[i].reshape(-1, 2)) for i in range(len(polygon_data))]
-            axs[1].add_collection(
-                PatchCollection(polygons, fc=ser_color[typedCells], ec="w", alpha=0.8, linewidths=0.1)
-            )
+            if fill_polygons is True:
+                axs[1].add_collection(PatchCollection(polygons, fc=ser_color[typedCells], ec="None", alpha=0.5))
 
-            # plot transcripts
+            # -- 3. plot transcripts --#
             transcripts = adata_crop.uns["transcripts"][library_id]
             tr = transcripts[
                 (transcripts.x_pix > x)
@@ -138,28 +156,26 @@ def view_region(
             tr.loc[:, "y_pix"] = tr.loc[:, "y_pix"] - y
             pts = tr[["x_pix", "y_pix"]].to_numpy()
 
-            # print(tr.gene.value_counts().head(10))
-
             if all_transcripts:
                 axs[1].scatter(pts[:, 0], pts[:, 1], marker=".", color="grey", s=pt_size, label="all")
 
             i = 0
-            cols = sns.color_palette("Spectral", len(geneNames))
+            cols = sns.color_palette("bright", len(geneNames))
             for gn in geneNames:
                 tr2 = tr[tr.gene == gn]
                 pts = tr2[["x_pix", "y_pix"]].to_numpy()
                 pts = pts[(pts[:, 0] > 0) & (pts[:, 1] > 0) & (pts[:, 0] < size_x) & (pts[:, 1] < size_y)]
-                axs[1].scatter(pts[:, 0], pts[:, 1], marker=".", color=cols[i], s=pt_size, label=gn)
+                axs[1].scatter(pts[:, 0], pts[:, 1], marker="o", color=cols[i], s=pt_size, label=gn)
                 i = i + 1
+
+            # -- 4. plot polygons edges --#
+            axs[1].add_collection(PatchCollection(polygons, fc="none", ec=ser_color[typedCells], lw=lw))
 
             h, l = axs[1].get_legend_handles_labels()
             l1 = axs[1].legend(h[: len(cats)], l[: len(cats)], loc="upper right", bbox_to_anchor=(1, 1), fontsize=6)
             axs[1].legend(h[len(cats) :], l[len(cats) :], loc="upper left", bbox_to_anchor=(0, 1), fontsize=6)
             axs[1].add_artist(l1)  # we need this because the 2nd call to legend() erases the first
-            title = (
-                library_id + "[x=" + str(x) + ",y=" + str(y) + ",size_x=" + str(size_x) + ",size_y=" + str(size_y) + "]"
-            )
-            plt.title(title, fontsize=6)
+            axs[1].set_title("")
             plt.tight_layout()
 
             if save is True:
@@ -167,6 +183,58 @@ def view_region(
                 plt.savefig(title + ".pdf", format="pdf", bbox_inches="tight")
 
     return adata_crop
+
+
+def get_regions(
+    adata: an.AnnData, df: pd.DataFrame, color_key: str = "celltype", pt_size: float = 20, save: bool = False
+) -> an.AnnData:
+    """Scis get region plot.
+
+    Parameters
+    ----------
+    adata
+        Anndata object.
+    df
+        dataframe of regions.
+
+    Returns
+    -------
+    Return the concatenate AnnData object of the regions.
+    """
+    library_id = adata.obs.library_id.cat.categories.tolist()[0]
+    img = sq.im.ImageContainer(adata.uns["spatial"][library_id]["images"]["hires"], library_id=library_id)
+
+    fig, axs = plt.subplots(nrows=1, ncols=df.shape[0], figsize=(16, 4))
+
+    for index, row in df.iterrows():
+        x = row.x
+        y = row.y
+        size_x = row.size_x
+        size_y = row.size_y
+
+        if (img.shape[0] < y + size_y) or (img.shape[1] < x + size_x):
+            print("Crop outside range img width/height = ", img.shape)
+            return 0
+        else:
+            crop1 = img.crop_corner(y, x, size=(size_y, size_x))
+            adata_crop = crop1.subset(adata, spatial_key="pixel")
+            adata_crop.obs["zone"] = row.zone
+            sq.pl.spatial_scatter(adata_crop, color=color_key, shape=None, size=pt_size, ax=axs[index])
+            axs[index].set_title(row.zone, fontsize=12)
+            if index < df.shape[0] - 1:
+                axs[index].get_legend().remove()
+            if index == 0:
+                concat = adata_crop.copy()
+            else:
+                concat = concat.concatenate(adata_crop)
+
+    plt.tight_layout()
+
+    if save is True:
+        print("saving " + library_id + "_regions.pdf")
+        plt.savefig(library_id + "_regions.pdf", format="pdf", bbox_inches="tight")
+
+    return concat
 
 
 def view_qc(adata: an.AnnData, library_id: str) -> int:
@@ -208,7 +276,13 @@ def view_qc(adata: an.AnnData, library_id: str) -> int:
 
 
 def view_pop(
-    adata: an.AnnData, celltypelabel: str = "celltype", metalabel: str = "population", figsize: tuple = (20, 5)
+    adata: an.AnnData,
+    celltypelabel: str = "celltype",
+    metalabel: str = "population",
+    pt_size: float = 2,
+    figsize: tuple = (20, 5),
+    zoom: tuple = None,
+    mypal: dict = None,
 ):
     """Scinsit compartment plot.
 
@@ -216,34 +290,36 @@ def view_pop(
     ----------
     adata
         Anndata object.
-    library_id
-        library id.
+    zoom
+        [x, y, x_size, y_size].
 
     Returns
     -------
     Return the Anndata object of the crop region.
     """
-    fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=figsize)
-    ad = adata[adata.obs[metalabel].isin(["Stroma"])]
-    sns.scatterplot(
-        x="x_pix", y="y_pix", data=ad.obs, s=2, hue=celltypelabel, ax=ax1, palette=get_palette(celltypelabel)
-    )
-    ad = adata[adata.obs[metalabel].isin(["Epithelial"])]
-    sns.scatterplot(
-        x="x_pix", y="y_pix", data=ad.obs, s=2, hue=celltypelabel, ax=ax2, palette=get_palette(celltypelabel)
-    )
-    ad = adata[adata.obs[metalabel].isin(["Immune"])]
-    sns.scatterplot(
-        x="x_pix", y="y_pix", data=ad.obs, s=2, hue=celltypelabel, ax=ax3, palette=get_palette(celltypelabel)
-    )
-    ad = adata[adata.obs[metalabel].isin(["Endothelial"])]
-    sns.scatterplot(
-        x="x_pix", y="y_pix", data=ad.obs, s=2, hue=celltypelabel, ax=ax4, palette=get_palette(celltypelabel)
-    )
-    plt.setp(ax1.get_legend().get_texts(), fontsize="6")
-    plt.setp(ax2.get_legend().get_texts(), fontsize="6")
-    plt.setp(ax3.get_legend().get_texts(), fontsize="6")
-    plt.setp(ax4.get_legend().get_texts(), fontsize="6")
+    if zoom is not None:
+        library_id = adata.obs.library_id.cat.categories.tolist()[0]
+        img = sq.im.ImageContainer(adata.uns["spatial"][library_id]["images"]["hires"], library_id=library_id)
+        if (img.shape[0] < zoom[1] + zoom[3]) or (img.shape[1] < zoom[0] + zoom[2]):
+            print("Crop outside range img width/height = ", img.shape)
+            return 0
+        else:
+            crop1 = img.crop_corner(zoom[1], zoom[0], size=(zoom[3], zoom[2]))
+            adata = crop1.subset(adata, spatial_key="pixel")
+
+    maliste = adata.obs[metalabel].cat.categories.tolist()
+    fig, axs = plt.subplots(1, len(maliste), figsize=figsize)
+    for i in range(len(maliste)):
+        ad = adata[adata.obs[metalabel].isin([maliste[i]])]
+        if mypal is None:
+            sns.scatterplot(x="x_pix", y="y_pix", data=ad.obs, s=pt_size, hue=celltypelabel, ax=axs[i]).set_title(
+                maliste[i]
+            )
+        else:
+            sns.scatterplot(
+                x="x_pix", y="y_pix", data=ad.obs, s=pt_size, hue=celltypelabel, ax=axs[i], palette=mypal
+            ).set_title(maliste[i])
+        plt.setp(axs[i].get_legend().get_texts(), fontsize="6")
 
 
 def json_zip(j):

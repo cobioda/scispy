@@ -7,7 +7,18 @@ import h5py
 import numpy as np
 import pandas as pd
 import scanpy as sc
+import seaborn as sns
 import tifffile
+
+""" from dask import array as da
+import dask.dataframe as dd
+from dask_image.imread import imread
+from dask.dataframe import read_csv
+
+from spatialdata import SpatialData
+from spatialdata.models import Image2DModel, PointsModel, ShapesModel, TableModel
+from spatialdata.transformations import Affine, Identity
+ """
 
 
 def load_merscope(folder: str, library_id: str, scale_percent: int) -> an.AnnData:
@@ -59,6 +70,7 @@ def load_merscope(folder: str, library_id: str, scale_percent: int) -> an.AnnDat
     # coordinates.rename(columns={"x_pix": "x", "y_pix": "y"})
     adata = sc.AnnData(
         X=datanoblank.values,
+        dtype=np.float32,
         obsm={"spatial": coord_mic, "X_spatial": coord_mic, "pixel": coord_pix},
         obs=meta,
         var=meta_gene,
@@ -259,77 +271,184 @@ def get_palette(color_key: str) -> dict:
     if color_key == "group":
         palette = {"CTRL": "#006E82", "PAH": "#AA0A3C"}
     elif color_key == "population":
-        palette = {"Endothelial": "#00A087FF", "Epithelial": "#3C5488FF", "Immune": "#E64B35FF", "Stroma": "#7E6148FF"}
+        palette = {"Endothelial": "#0077b6", "Epithelial": "#5e548e", "Immune": "#606c38", "Stroma": "#bb3e03"}
+    elif color_key == "compartment":
+        palette = {
+            "cartilage nasal": "#fb8500",
+            "vascular lymphatic": "#ef233c",
+            "olfactory epithelium": "#344966",
+            "migrating neuron": "#606c38",
+        }
     elif color_key == "celltype":
         palette = {
             # htap
-            # "Basal": "#E41A1C",
-            "PNEC": "#377EB8",
-            "Pre-TB-SC": "#4DAF4A",
-            "TRB-SC": "#984EA3",
-            "AT0": "#ffccd5",
-            "AT2a": "#F781BF",
-            "AT2b": "#BC9DCC",
-            "AT1-AT2": "#A65628",
-            "AT1-imm": "#54B0E4",
-            "AT1": "#84a59d",
-            "MCC": "#1B9E77",
-            "Lymph": "#a6d8f5",
-            "aCap": "#7FCDBB",
-            "gCap": "#41B6C4",
-            "Art": "#1D91C0",
-            "V-Pulm": "#225EA8",
-            "V-Sys": "#669bbc",
-            "AM1": "#C9CE46",
-            "AM2": "#E6B818",
-            "AM-prolif": "#ADDD8E",
-            "DC1": "#78C679",
-            "DC2": "#41AB5D",
-            "Mono": "#739154",
-            "Inter-Macro": "#01736b",
-            "CD4": "#a4ac86",
-            "CD8": "#656d4a",
-            "T-prolif": "#46c798",
-            "NK": "#ebd513",
-            "Mast": "#ccbf47",
-            "Plasma": "#ff7d00",
-            "pDC": "#e670b4",
-            "B": "#6F5D85",
-            "Megak": "#960c5a",
-            "Peri": "#fee0d2",
-            "SMC": "#eaac8b",
-            "AdvFibro": "#5e1e33",
-            "AlvFibro": "#f2ae5a",
-            "MyoFibro": "#e37e12",
-            # paolo
-            "Cartilages": "#414535",
-            "Stromal": "#618985",
-            "Proliferating stromal": "#96bbbb",
-            "Pericytes": "#c19875",
-            "Proliferating pericytes": "#f2e3bc",
-            "Respiratory Ciliated": "#f5b840",
-            "Deuterosomal": "#e68d2d",
-            "Duct/MUC5AC+": "#ebcb73",
-            "Basal": "#12374a",
-            "Proliferating basal": "#3c979a",
-            "Proliferating sustentacular": "#bad99a",
-            "Sustentacular": "#5f7847",
-            "Olfactory sensory neurons": "#a3a380",
-            "Neurons": "#096d2f",
-            "Olfactory sensory neurons GNRH1+ISL1+": "#ff9f1c",
-            "Excitatory neurons": "#bb8588",
-            "Proliferating excitatory neurons": "#d8a48f",
-            "Myeloids": "#8595e1",
-            "Proliferating myeloids": "#c6dec7",
-            "ENS glia": "#fe5d9f",
-            "Proliferating ENS glia": "#f686bd",
-            "Skeletal muscle": "#548c2f",
-            "Satellites": "#104911",
-            "Proliferating endothelial": "#89b0ae",
-            "Vascular endothelial": "#555b6e",
-            "Lymphatic endothelial": "#2ec4b6",
-            "Proliferating lymphatic endothelial": "#2ec4b6",
-            "NA": "#ffffff",
+            "Basal": "#7209b7",
+            "Multiciliated": "#b5179e",
+            "Neuroendocrine": "#d0d1ff",
+            "Secretory": "#9d4edd",
+            "AT0": "#e0aaff",
+            "AT2": "#6a4c93",
+            "AT1": "#4d194d",
+            "Lymphatic": "#124e78",
+            "aCap": "#00bbf9",
+            "gCap": "#0466c8",
+            "ArtEC": "#6096ba",
+            "VeinEC": "#657ed4",
+            "AlvMacro": "#ffd29d",
+            "Dendritic": "#d6ce93",
+            "Monocyte": "#b1cc74",
+            "InterMacro": "#38b000",
+            "CD4": "#7c6a0a",
+            "CD8": "#bcbd8b",
+            "NK": "#e8fcc2",
+            "Mast": "#4f6d7a",
+            "Plasma": "#829399",
+            "B": "#fffbbd",
+            "Megak": "#006400",
+            "Pericyte": "#9c6644",
+            "SMC": "#d81159",
+            "AdvFibro": "#ef6351",
+            "AlvFibro": "#d58936",
+            "MyoFibro": "#69140e",
+            "ghost": "#cfcfcf",
         }
+    elif color_key == "celltype2":
+        palette = {
+            # paolo
+            "cartilage": "#005f73",
+            "myeloid": "#0a9396",
+            "skeletal muscle": "#94d2bd",
+            "stromal": "#e9d8a6",
+            "endothelial": "#64a6bd",
+            "lymphatic": "#90a8c3",
+            "pericyte": "#d7b9d5",
+            "vascular": "#f4cae0",
+            "basal": "#003049",
+            "ciliated": "#d62828",
+            "deuterosomal": "#f77f00",
+            "secretory": "#fcbf49",
+            "excitatory neuron": "#797d62",
+            "neuron": "#4a4e69",
+            "glia": "#9b9b7a",
+            "olfactory sensory neuron": "#d9ae94",
+            "satelite": "#ffcb69",
+            "sustentacular": "#b58463",
+            # per compartment
+            #'cartilage nasal': '#fb8500',
+            #'vascular lymphatic': '#ef233c',
+            #'olfactory epithelium': '#344966',
+            #'migrating neuron': '#606c38',
+        }
+    elif color_key == "leiden":  # default is 40 colors returned
+        l = list(range(0, 39, 1))
+        ll = list(map(str, l))
+        palette = dict(zip(ll, sns.color_palette("husl", 40).as_hex()))
 
     return palette
+
+
+"""
+def merfish(path: str, library_id: str, scale_percent: int) -> SpatialData:
+
+    Read *MERFISH* data from Vizgen.
+    Parameters
+    ----------
+    path
+        Path to merscope or vpt output directory containing :
+        - cell_by_gene.csv
+        - cell_metadata.csv
+        - detected_transcripts.csv
+        - cellpose_micron_space.parquet or cell_boundaries.parquet
+        - images
+            - micron_to_mosaic_pixel_transform.csv
+            - mosaic_DAPI_z2.tif
+
+    Returns
+    -------
+    :class:`spatialdata.SpatialData`
+
+    path = Path(path)
+    count_path = path / 'cell_by_gene.csv'
+    obs_path = path / 'cell_metadata.csv'
+    transcript_path = path / 'detected_transcripts.csv'
+    boundaries_path = path / 'cell_boundaries.parquet'
+    if os.path.isfile(path / 'cellpose_mosaic_space.parquet'):
+        boundaries_path = path / 'cellpose_mosaic_space.parquet'
+    images_dir = path / 'images'
+    microns_to_pixels = np.genfromtxt(images_dir / 'micron_to_mosaic_pixel_transform.csv')
+    microns_to_pixels = Affine(microns_to_pixels, input_axes=("x", "y"), output_axes=("x", "y"))
+
+    ### Images
+    images = {}
+    exp = r"mosaic_(?P<stain>[\\w|-]+[0-9]?)_z(?P<z>[0-9]+).tif"
+    matches = [re.search(exp, file.name) for file in images_dir.iterdir()]
+    stainings = {match.group("stain") for match in matches if match}
+    z_levels = {match.group("z") for match in matches if match}
+    for z in z_levels:
+        im = da.stack([imread(images_dir / f"mosaic_{stain}_z{z}.tif").squeeze() for stain in stainings], axis=0)
+        parsed_im = Image2DModel.parse(
+            im,
+            dims=("c", "y", "x"),
+            transformations={"global": Identity()},
+            # transformations={"pixels": Identity(), "microns": microns_to_pixels.inverse()},
+            c_coords=stainings,
+        )
+        images[f"z{z}"] = parsed_im
+
+    ### Transcripts
+    transcript_df = dd.read_csv(transcript_path)
+    transcripts = PointsModel.parse(
+        transcript_df,
+        coordinates={"x": 'global_x', "y": 'global_y', "z": 'global_z'},
+        transformations={"global": Identity()},
+        # transformations={"microns": Identity(), "pixels": microns_to_pixels},
+    )
+    points = {}
+    gene_categorical = dd.from_pandas(transcripts['gene'].compute().astype('category'), npartitions=transcripts.npartitions).reset_index(drop=True)
+    transcripts['gene'] = gene_categorical
+
+    points = {"transcripts": transcripts}
+
+    # split the transcripts into the different z-levels
+    #z = transcripts['z'].compute()
+    #z_levels = z.value_counts().index
+    #z_levels = sorted(z_levels, key=lambda x: int(x))
+    #for z_level in z_levels:
+    #    transcripts_subset = transcripts[z == z_level]
+    #    # temporary solution until the 3D support is better developed
+    #    transcripts_subset = transcripts_subset.drop('z', axis=1)
+    #    points[f"transcripts_z{int(z_level)}"] = transcripts_subset
+
+    ### Polygons
+    geo_df = gpd.read_parquet(boundaries_path)
+    geo_df = geo_df[geo_df.ZIndex == 2]
+    geo_df = geo_df.rename_geometry("geometry")
+    geo_df.index = geo_df['EntityID'].astype(str)
+    geo_df = geo_df.drop(columns=['EntityID','ZIndex','ID','Type','ZLevel','Name','ParentID','ParentType'])
+
+    polygons = ShapesModel.parse(geo_df, transformations={"global": Identity()})
+    # polygons = ShapesModel.parse(geo_df, transformations={"microns": Identity(), "pixels": microns_to_pixels})
+    shapes = {"polygons": polygons}
+
+    ### Table
+    data = pd.read_csv(count_path, index_col=0, dtype={'cell': str})
+    obs = pd.read_csv(obs_path, index_col=0, dtype={'EntityID': str})
+
+    is_gene = ~data.columns.str.lower().str.contains("blank")
+    adata = an.AnnData(data.loc[:, is_gene], dtype=data.values.dtype, obs=obs)
+
+    adata.obsm["blank"] = data.loc[:, ~is_gene]  # blank fields are excluded from adata.X
+    adata.obsm["spatial"] = adata.obs[['center_x', 'center_y']].values
+    adata.uns["spatial"] = {'mylib': {}}
+    adata.obs["region"] = pd.Series(path.stem, index=adata.obs_names, dtype="category")
+    adata.obs['EntityID'] = adata.obs.index
+
+    table = TableModel.parse(
+        adata,
+        region_key="region",
+        region=adata.obs["region"].cat.categories.tolist(),
+        instance_key='EntityID',
+    )
+
+    return SpatialData(shapes=shapes, points=points, images=images, table=table)
+"""
