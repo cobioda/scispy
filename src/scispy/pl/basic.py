@@ -32,13 +32,12 @@ def view_region(
     lw: float = 1,
     image_cmap: str = "viridis",
     fill_polygons: bool = True,
-    metafilt: str = None,
-    metafiltvals: str = None,
     all_transcripts: bool = False,
     noimage: bool = False,
     save: bool = False,
     mypal: dict = None,
-    highlighttop: int = None,
+    highlight_top: int = None,
+    cat_kept: str = None,
     figsize: tuple = (8, 8),
 ) -> an.AnnData:
     """Scis crop region plot.
@@ -66,16 +65,40 @@ def view_region(
             print("No cells found in region [x=", x, ", y=", y, ", size_x=", size_x, ", size_y=", size_y)
             return adata_crop
         else:
-            if metafilt is not None:
-                adata_crop = adata_crop[adata_crop.obs[metafilt].isin(metafiltvals)]
-            if highlighttop is not None:
-                toplist = adata_crop.obs[color_key].value_counts().keys().tolist()[0:highlighttop]
-                adata_crop = adata_crop[adata_crop.obs[color_key].isin(toplist)]
-
             print(adata_crop.shape[0], "cells to plot")
 
-            # load cell boundaries
+            # select categories to plot, ghost all others as 'others'
+            if cat_kept is not None:
+                lst = adata_crop.obs[color_key].value_counts().keys().tolist()
+                tokeep = cat_kept
+                toghost = list(set(lst) - set(cat_kept))
+                my_dict = {}
+                for _index, element in enumerate(tokeep):
+                    my_dict[element] = element
+                for _index, element in enumerate(toghost):
+                    my_dict[element] = "others"
+                adata_crop.obs[color_key] = adata_crop.obs[color_key].map(my_dict)
+                adata_crop.uns.pop(color_key + "_colors", None)
+                adata_crop.obs[color_key] = adata_crop.obs[color_key].astype("category")
+            if highlight_top is not None:
+                lst = adata_crop.obs[color_key].value_counts().keys().tolist()
+                tokeep = lst[0:highlight_top]
+                toghost = lst[highlight_top : len(lst)]
+                my_dict = {}
+                for _index, element in enumerate(tokeep):
+                    my_dict[element] = element
+                for _index, element in enumerate(toghost):
+                    my_dict[element] = "others"
+                adata_crop.obs[color_key] = adata_crop.obs[color_key].map(my_dict)
+                adata_crop.uns.pop(color_key + "_colors", None)
+                adata_crop.obs[color_key] = adata_crop.obs[color_key].astype("category")
+
+            print("load_bounds_pixel start")
+
+            # load cell boundaries --> need to have this in anndata object somewhere : 'obsm' ?
             adata_crop = load_bounds_pixel(adata_crop, library_id)
+
+            print("load_bounds_pixel end")
 
             currentCells = []
             typedCells = []
@@ -96,6 +119,8 @@ def view_region(
                 xxx = df_poly_z.values - [x, y]
                 inst_poly = np.array(xxx.tolist())
                 polygon_data.append(inst_poly)
+
+            print("polygon_data end")
 
             # generate colors for categories by plotting
             cats = adata_crop.obs[color_key].cat.categories.tolist()

@@ -9,6 +9,7 @@ import pandas as pd
 import scanpy as sc
 import seaborn as sns
 import tifffile
+from geopandas import GeoDataFrame
 
 """ from dask import array as da
 import dask.dataframe as dd
@@ -108,6 +109,19 @@ def load_merscope(folder: str, library_id: str, scale_percent: int) -> an.AnnDat
         "transformation_matrix": transformation_matrix,
         "folder": folder,
     }
+
+    adata.obsm.setdefault("geometry", GeoDataFrame(index=adata.obs_names))
+    if os.path.isfile(folder + "/cellpose_mosaic_space.parquet"):
+        gdf = gpd.read_parquet(folder + "/cellpose_mosaic_space.parquet")
+        gdf = gdf[gdf.ZIndex == 2]
+        gdf["EntityID"] = gdf["EntityID"].astype(str)
+        gdf.set_index("EntityID", drop=True, inplace=True)
+        gdf.drop(["ZIndex", "Type", "ID", "ZLevel", "Name", "ParentID", "ParentType"], axis=1, inplace=True)
+        gdf.geometry = gdf.geometry.scale(
+            xfact=scale_percent / 100, yfact=scale_percent / 100, zfact=1.0, origin=(0, 0)
+        )
+        adata.obsm["geometry"] = gdf
+
     image = None
     resized = None
 
@@ -310,7 +324,6 @@ def get_palette(color_key: str) -> dict:
             "AdvFibro": "#ef6351",
             "AlvFibro": "#d58936",
             "MyoFibro": "#69140e",
-            "ghost": "#cfcfcf",
         }
     elif color_key == "celltype2":
         palette = {
@@ -343,6 +356,8 @@ def get_palette(color_key: str) -> dict:
         l = list(range(0, 39, 1))
         ll = list(map(str, l))
         palette = dict(zip(ll, sns.color_palette("husl", 40).as_hex()))
+
+    palette["others"] = "#ffffff"
 
     return palette
 
