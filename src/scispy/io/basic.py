@@ -8,8 +8,9 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 import seaborn as sns
+import spatialdata as sd
+import spatialdata_io
 import tifffile
-from geopandas import GeoDataFrame
 
 """ from dask import array as da
 import dask.dataframe as dd
@@ -22,7 +23,9 @@ from spatialdata.transformations import Affine, Identity
  """
 
 
-def load_merscope(folder: str, library_id: str, scale_percent: int) -> an.AnnData:
+def load_merscope(
+    folder: str, library_id: str, scale_percent: int = 10, z: int = 2, full: str = True, offset: tuple = (0, 0)
+) -> an.AnnData:
     """Load vizgen merscope data.
 
     Parameters
@@ -33,7 +36,8 @@ def load_merscope(folder: str, library_id: str, scale_percent: int) -> an.AnnDat
         library id.
     scale_percent
         scaling factor for image and pixel coordinates reduction.
-
+    offset
+        transfert micron coordinates by (x,y) stored in spatial_dataset coordinate system
     Returns
     -------
     Anndata initialized object.
@@ -52,6 +56,7 @@ def load_merscope(folder: str, library_id: str, scale_percent: int) -> an.AnnDat
     meta = meta.loc[data.index.tolist()]
     meta["cell_cov"] = datanoblank.sum(axis=1)
     meta["barcodeCount"] = datanoblank.sum(axis=1)
+    meta["transcript_count"] = datanoblank.sum(axis=1)
     meta["width"] = meta["max_x"].to_numpy() - meta["min_x"].to_numpy()
     meta["height"] = meta["max_y"].to_numpy() - meta["min_y"].to_numpy()
 
@@ -65,25 +70,30 @@ def load_merscope(folder: str, library_id: str, scale_percent: int) -> an.AnnDat
     meta["library_id"] = library_id
     meta = meta.drop(columns=["min_x", "max_x", "min_y", "max_y"])
 
+    meta["dataset_x"] = meta["center_x"] + offset[0]
+    meta["dataset_y"] = meta["center_y"] + offset[1]
+
     # init annData pixel coordinates
     coord_pix = meta[["x_pix", "y_pix"]].to_numpy()
     coord_mic = meta[["center_x", "center_y"]].to_numpy()
+    coord_dataset = meta[["dataset_x", "dataset_y"]].to_numpy()
     # coordinates.rename(columns={"x_pix": "x", "y_pix": "y"})
     adata = sc.AnnData(
         X=datanoblank.values,
         dtype=np.float32,
-        obsm={"spatial": coord_mic, "X_spatial": coord_mic, "pixel": coord_pix},
+        obsm={"spatial": coord_mic, "X_spatial": coord_mic, "spatial_dataset": coord_dataset, "pixel": coord_pix},
         obs=meta,
         var=meta_gene,
     )
     adata.layers["counts"] = adata.X.copy()
 
     # transcripts
-    transcripts = load_transcript(folder + "/detected_transcripts.csv", transformation_matrix, scale_percent)
+    transcripts = load_transcript(folder + "/detected_transcripts.csv", transformation_matrix, scale_percent, offset)
     adata.uns["transcripts"] = {library_id: {}}
-    adata.uns["transcripts"][library_id] = transcripts
+    if full is True:
+        adata.uns["transcripts"][library_id] = transcripts
 
-    percent_in_cell = adata.obs.barcodeCount.sum(axis=0) * 100 / adata.uns["transcripts"][library_id].shape[0]
+    percent_in_cell = adata.obs.barcodeCount.sum(axis=0) * 100 / transcripts.shape[0]
     print("\n" + library_id)
     print("total cells=", adata.shape[0])
     print("total transcripts=", transcripts.shape[0])
@@ -91,41 +101,102 @@ def load_merscope(folder: str, library_id: str, scale_percent: int) -> an.AnnDat
     print("mean transcripts per cell=", meta["barcodeCount"].mean())
     print("median transcripts per cell=", meta["barcodeCount"].median())
 
-    # image Container
-    image = tifffile.imread(folder + "/images/mosaic_DAPI_z2.tif")
-    # print('loaded image into memory')
-    width = int(image.shape[1] * scale_percent / 100)
-    height = int(image.shape[0] * scale_percent / 100)
-    dim = (width, height)
-    resized = cv2.resize(image, dim, interpolation=cv2.INTER_AREA)
-    # print('resized image')
-    adata.uns["spatial"] = {library_id: {}}
-    adata.uns["spatial"][library_id]["images"] = {}
-    adata.uns["spatial"][library_id]["images"] = {"hires": resized}
-    adata.uns["spatial"][library_id]["scalefactors"] = {
-        "tissue_hires_scalef": 1,
-        "spot_diameter_fullres": 5,
-        "scale_percent": scale_percent,
-        "transformation_matrix": transformation_matrix,
-        "folder": folder,
-    }
+    if full is True:
+        # image Container
+        image = tifffile.imread(folder + "/images/mosaic_DAPI_z" + str(z) + ".tif")
+        # print('loaded image into memory')
+        width = int(image.shape[1] * scale_percent / 100)
+        height = int(image.shape[0] * scale_percent / 100)
+        dim = (width, height)
+        cv2.resize(image, dim, interpolation=cv2.INTER_AREA)
 
-    adata.obsm.setdefault("geometry", GeoDataFrame(index=adata.obs_names))
-    if os.path.isfile(folder + "/cellpose_mosaic_space.parquet"):
-        gdf = gpd.read_parquet(folder + "/cellpose_mosaic_space.parquet")
-        gdf = gdf[gdf.ZIndex == 2]
-        gdf["EntityID"] = gdf["EntityID"].astype(str)
-        gdf.set_index("EntityID", drop=True, inplace=True)
-        gdf.drop(["ZIndex", "Type", "ID", "ZLevel", "Name", "ParentID", "ParentType"], axis=1, inplace=True)
-        gdf.geometry = gdf.geometry.scale(
-            xfact=scale_percent / 100, yfact=scale_percent / 100, zfact=1.0, origin=(0, 0)
-        )
-        adata.obsm["geometry"] = gdf
+        # print('resized image')
+        adata.uns["spatial"] = {library_id: {}}
+        adata.uns["spatial"][library_id]["images"] = {}
+        adata.uns["spatial"][library_id]["images"] = {"hires": None}
+        adata.uns["spatial"][library_id]["scalefactors"] = {
+            "tissue_hires_scalef": 1,
+            "spot_diameter_fullres": 5,
+            "scale_percent": scale_percent,
+            "transformation_matrix": transformation_matrix,
+            "folder": folder,
+            "dataset_offset_x": offset[0],
+            "dataset_offset_y": offset[1],
+        }
+        image = None
 
-    image = None
-    resized = None
+    # adata.obsm.setdefault("geometry", GeoDataFrame(index=adata.obs_names))
+    # if os.path.isfile(folder + "/cellpose_mosaic_space.parquet"):
+    #    gdf = gpd.read_parquet(folder + "/cellpose_mosaic_space.parquet")
+    #    gdf = gdf[gdf.ZIndex == 2]
+    #    gdf["EntityID"] = gdf["EntityID"].astype(str)
+    #    gdf.set_index("EntityID", drop=True, inplace=True)
+    #    gdf.drop(["ZIndex", "Type", "ID", "ZLevel", "Name", "ParentID", "ParentType"], axis=1, inplace=True)
+    #    gdf.geometry = gdf.geometry.scale(
+    #        xfact=scale_percent / 100, yfact=scale_percent / 100, zfact=1.0, origin=(0, 0)
+    #    )
+    #    adata.obsm["geometry"] = gdf
 
     return adata
+
+
+def load_sdata_merscope(
+    path: str, vpt_outputs: str, region_name: str, slide_name: str, z_layers: int = 2
+) -> sd.SpatialData:
+    """Load vizgen merscope data as spatialdata object
+
+    Parameters
+    ----------
+    path
+        path to folder.
+    vpt_outputs
+        path to vpt folder.
+    region_name
+        region_name id.
+    slide_name
+        slide_name id.
+    z_layers
+        z layers to load.
+
+    Returns
+    -------
+    SpatialData initialized object loaded first using spatialdata_io library
+    """
+    sdata = spatialdata_io.merscope(
+        path=path, vpt_outputs=vpt_outputs, region_name=region_name, slide_name=slide_name, z_layers=z_layers
+    )
+    key = slide_name + "_" + region_name
+    sdata.table.obs_names.name = None
+    sdata[key + "_polygons"].index.name = None
+
+    # transformation matrix micron to mosaic pixel
+    transformation_matrix = pd.read_csv(
+        path + "/images/micron_to_mosaic_pixel_transform.csv", header=None, sep=" "
+    ).values
+
+    # Transform coordinates to mosaic pixel coordinates
+    temp = sdata.table.obs[["center_x", "center_y"]].values
+    cell_positions = np.ones((temp.shape[0], temp.shape[1] + 1))
+    cell_positions[:, :-1] = temp
+    transformed_positions = np.matmul(transformation_matrix, np.transpose(cell_positions))[:-1]
+    sdata.table.obs["center_x_pix"] = transformed_positions[0, :]
+    sdata.table.obs["center_y_pix"] = transformed_positions[1, :]
+    # sdata.table.obs = sdata.table.obs.drop(columns=["min_x", "max_x", "min_y", "max_y"])
+
+    # coord_pixels = sdata.table[["center_x_pix", "center_x_pix"]].to_numpy()
+    # coord_microns = sdata.table[["center_x", "center_y"]].to_numpy()
+    # sdata.table.obsm={"microns": coord_microns, "pixels": coord_pixels},
+
+    sdata.table.layers["counts"] = sdata.table.X.copy()
+    # percent_in_cell = sdata.table.obs.n_Counts.sum(axis=0) * 100 / len(sdata[key + '_transcripts'])
+    # print("\n" + slide_name)
+    # print("total cells=", sdata.table.obs.shape[0])
+    # print("total transcripts=", len(sdata[key + '_transcripts']))
+    # print("% in cells=", percent_in_cell)
+    # print("mean transcripts per cell=", sdata.table.obs["n_Counts"].mean())
+    # print("median transcripts per cell=", sdata.table.obs["n_Counts"].median())
+
+    return sdata
 
 
 def save_merscope(adata: an.AnnData, file: str) -> int:
@@ -148,7 +219,7 @@ def save_merscope(adata: an.AnnData, file: str) -> int:
     return 0
 
 
-def load_transcript(path: str, transformation_matrix: str, scale_percent: int) -> pd.DataFrame:
+def load_transcript(path: str, transformation_matrix: str, scale_percent: int, offset: tuple = (0, 0)) -> pd.DataFrame:
     """Load detected transcripts.
 
     Parameters
@@ -173,6 +244,10 @@ def load_transcript(path: str, transformation_matrix: str, scale_percent: int) -
     transformed_positions = np.matmul(transformation_matrix, np.transpose(transcript_positions))[:-1]
     transcripts["x_pix"] = transformed_positions[0, :] * (scale_percent / 100)
     transcripts["y_pix"] = transformed_positions[1, :] * (scale_percent / 100)
+
+    # offset full dataset coordinates
+    transcripts["dataset_x"] = transcripts["global_x"] + offset[0]
+    transcripts["dataset_y"] = transcripts["global_y"] + offset[1]
 
     # global_x, _y -> micron coordinates
     # x_pix, y_pix -> pixels coordinates
@@ -271,7 +346,7 @@ def load_parquet(adata: an.AnnData, library_id: str) -> an.AnnData:
 
 
 def get_palette(color_key: str) -> dict:
-    """Scinsit palette definition for a specific Htap project.
+    """Scispy palette definition for a specific PAH project.
 
     Parameters
     ----------

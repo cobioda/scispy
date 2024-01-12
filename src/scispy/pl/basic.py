@@ -28,7 +28,7 @@ def view_region(
     y: int,
     size_x: int,
     size_y: int,
-    show_loc: bool = False,
+    show_loc: bool = True,
     lw: float = 1,
     image_cmap: str = "viridis",
     fill_polygons: bool = True,

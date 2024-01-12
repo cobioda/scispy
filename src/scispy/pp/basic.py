@@ -2,13 +2,67 @@ import anndata as an
 import pandas as pd
 import scanpy as sc
 import scvi
+import spatialdata as sd
 import squidpy as sq
 from matplotlib import pyplot as plt
 
 
+def filter_and_run_scanpy_sdata(
+    sdata: sd.SpatialData, min_counts: int = 20, resolution: float = 0.5, key: str = "leiden"
+) -> int:
+    """Filter and run scanpy analysis.
+
+    Parameters
+    ----------
+    sdata
+        SpatialData object.
+    min_counts
+        minimum transcript count to keep cell.
+
+    Returns
+    -------
+    Anndata analyzed object.
+    """
+    print("total cells=", sdata.table.shape[0])
+
+    # filter also cells with negative coordinate center_x and center_y
+    # sdata.table.obs["n_counts"] = sdata.table.layers['counts'].sum(axis=1)
+    # sdata.table.obs.loc[sdata.table.obs['center_x'] < 0, 'n_counts'] = 0
+    # sdata.table.obs.loc[sdata.table.obs['center_y'] < 0, 'n_counts'] = 0
+
+    sc.pp.filter_cells(sdata.table, min_counts=min_counts)
+
+    adata = sdata.table[sdata.table.obs.center_x > 0]
+    adata2 = adata[adata.obs.center_y > 0]
+    del sdata.table
+    sdata.table = adata2
+
+    print("remaining cells=", sdata.table.shape[0])
+
+    sdata.table.raw = sdata.table
+    sc.pp.normalize_total(sdata.table)
+    sc.pp.log1p(sdata.table)
+    sc.pp.scale(sdata.table, max_value=10)
+    sc.tl.pca(sdata.table, svd_solver="arpack")
+    sc.pp.neighbors(sdata.table, n_neighbors=10)
+    sc.tl.umap(sdata.table)
+    sc.tl.leiden(sdata.table, resolution=resolution, key_added=key)
+
+    fig, axs = plt.subplots(1, 2, figsize=(20, 6))
+    sc.pl.embedding(sdata.table, "umap", color=key, ax=axs[0], show=False)
+    sq.pl.spatial_scatter(sdata.table, color=key, shape=None, size=1, ax=axs[1])
+    plt.tight_layout()
+
+    # works with spatialdata-0.0.15, then write_shapes error
+    key = sdata.table.obs.cells_region.unique().tolist()[0]
+    sdata.add_shapes(key, sdata[key].loc[sdata.table.obs.index.tolist()], overwrite=True)
+
+    return 0
+
+
 def filter_and_run_scanpy(
-    adata: an.AnnData, min_counts: int = 10, resolution: float = 0.5, key: str = "clusters"
-) -> an.AnnData:
+    adata: an.AnnData, min_counts: int = 10, label_count="n_counts", resolution: float = 0.5, key: str = "leiden"
+) -> int:
     """Filter and run scanpy analysis.
 
     Parameters
@@ -22,15 +76,16 @@ def filter_and_run_scanpy(
     -------
     Anndata analyzed object.
     """
-    sc.pp.filter_cells(adata, min_counts=min_counts, inplace=True)
-
     print("total cells=", adata.shape[0])
-    print("mean transcripts per cell=", adata.obs["barcodeCount"].mean())
-    print("median transcripts per cell=", adata.obs["barcodeCount"].median())
+    sc.pp.filter_cells(adata, min_counts=min_counts)
+    print("remaining cells=", adata.shape[0])
 
+    print("mean tr./cell=", adata.obs[label_count].mean())
+    print("median tr./cell=", adata.obs[label_count].median())
+
+    adata.raw = adata
     sc.pp.normalize_total(adata)
     sc.pp.log1p(adata)
-    adata.raw = adata
     sc.pp.scale(adata, max_value=10)
     sc.tl.pca(adata, svd_solver="arpack")
     sc.pp.neighbors(adata, n_neighbors=10)
@@ -42,7 +97,7 @@ def filter_and_run_scanpy(
     sq.pl.spatial_scatter(adata, color=key, shape=None, size=1, ax=axs[1])
     plt.tight_layout()
 
-    return adata
+    return 0
 
 
 def annotate(
@@ -51,7 +106,7 @@ def annotate(
     label_ref: str = "celltype",
     label_key: str = "celltype",
     metaref2add: str = None,
-) -> an.AnnData:
+) -> int:
     """Transfert cell type label from single cell to spatial annData object using SCVI (scArches developpers credits for final knn neighbor transfert)
 
     Parameters
@@ -71,7 +126,7 @@ def annotate(
     -------
     Anndata labeled object.
     """
-    ad_spatial.var.index = ad_spatial.var.index.str.upper()  # lower
+    ad_spatial.var.index = ad_spatial.var.index.str.upper()
     ad_ref.var.index = ad_ref.var.index.str.upper()
 
     print("ref. ", ad_ref.shape)
@@ -91,7 +146,7 @@ def annotate(
 
     # Concatenate the datasets
     concat = ad_ref.concatenate(ad_emb, batch_key="tech", batch_categories=["10x", "MERFISH"]).copy()
-    # concat.layers["counts"] = concat.X.copy()
+    concat.layers["counts"] = concat.raw.X.copy()
     # sc.pp.normalize_total(concat, target_sum=1e4)
     # sc.pp.log1p(concat)
     # concat.raw = concat  # keep full dimension safe
@@ -122,11 +177,19 @@ def annotate(
     concat.obs["C_scANVI"] = lvae.predict(concat)
     concat.obsm["X_scANVI"] = lvae.get_latent_representation(concat)
 
+    # add score
+    df_soft = lvae.predict(concat, soft=True)
+    concat.obs["score"] = df_soft.max(axis=1)
+
     merfish_mask = concat.obs["tech"] == "MERFISH"
     ad_spatial.obs[f"{label_key}"] = concat.obs["C_scANVI"][merfish_mask].values
+    ad_spatial.obs[f"{label_key}_score"] = concat.obs["score"][merfish_mask].values
+
+    ad_spatial.obs[f"{label_key}"] = ad_spatial.obs[f"{label_key}"].astype("category")
 
     if metaref2add:
         d = pd.Series(ad_ref.obs[f"{metaref2add}"].values, index=ad_ref.obs[f"{label_ref}"]).to_dict()
         ad_spatial.obs[f"{metaref2add}"] = ad_spatial.obs[f"{label_key}"].map(d)
+        ad_spatial.obs[f"{metaref2add}"] = ad_spatial.obs[f"{metaref2add}"].astype("category")
 
-    return ad_spatial
+    return 0
