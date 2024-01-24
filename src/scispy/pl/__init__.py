@@ -6,6 +6,7 @@ from .basic import (
     plot_contrast_panels,
     plot_gamma_panels,
     plot_img_and_hist,
+    plot_shape_along_x,
     view_pop,
     view_qc,
     view_region,

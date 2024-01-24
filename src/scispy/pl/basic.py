@@ -1,5 +1,6 @@
 import base64
 import json
+import math
 import zlib
 
 import anndata as an
@@ -8,6 +9,7 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 import seaborn as sns
+import spatialdata as sd
 import squidpy as sq
 from clustergrammer2 import CGM2, Network
 from matplotlib import pyplot as plt
@@ -15,8 +17,144 @@ from matplotlib.collections import PatchCollection
 from matplotlib.patches import Polygon as mplPolygon
 from observable_jupyter import embed
 from skimage import exposure, img_as_float
+from spatialdata.transformations import (
+    Affine,
+    set_transformation,
+)
 
 from scispy.io.basic import load_bounds_pixel
+
+
+def plot_shape_along_x(
+    sdata: sd.SpatialData,
+    group_lst: tuple = ["eOSNs", "Deuterosomal"],  # the cell types to consider
+    gene_lst: tuple = ["KRT19", "SOX2"],  # the genes to consider
+    label_obs_key: str = "cell_type",
+    poly_name: str = "epi_1",
+    poly_name_key: str = "regionName",
+    sdata_shape_key: str = "anatomical",
+    sdata_transcript_key: str = "PGW9-2-2A_region_0_transcripts",
+    sdata_polygon_key: str = "PGW9-2-2A_region_0_polygons",
+    sdata_group_key: str = "celltypes",
+    target_coordinates: str = "microns",
+    theta: float = math.pi / 6,
+    save: bool = False,
+):
+    """Analyse a polygon shape stored, rotate it and view celltype or gene expression along x coordinate
+
+    Parameters
+    ----------
+    sdata
+        SpatialData object.
+    label_obs_key
+        label_key in sdata.table.obs to add
+    shape_key
+        name of shape layer
+    poly_name
+        name of polygone in shape layer
+    poly_name_key
+        where to find poly_name information in geodataframe shape layer
+    groups
+        group list to consider (related to label_obs_key)
+    target_coordinates
+        target_coordinates system of sdata object
+
+    """
+    if group_lst is None:
+        group_lst = sdata.table.obs[label_obs_key].unique().tolist()
+
+    # extract polytgone to work with
+    poly = sdata[sdata_shape_key][sdata[sdata_shape_key][poly_name_key] == poly_name].geometry.item()
+    sdata2 = sd.polygon_query(
+        sdata,
+        poly,
+        target_coordinate_system=target_coordinates,
+        filter_table=True,
+        points=True,
+        shapes=True,
+        images=True,
+    )
+
+    # perform rotation of shape
+    rotation = Affine(
+        [
+            [math.cos(theta), -math.sin(theta), 0],
+            [math.sin(theta), math.cos(theta), 0],
+            [0, 0, 1],
+        ],
+        input_axes=("x", "y"),
+        output_axes=("x", "y"),
+    )
+    # translation = Translation([0, 0], axes=("x", "y"))
+    # sequence = Sequence([rotation, translation])
+
+    set_transformation(sdata2[sdata_transcript_key], rotation, to_coordinate_system=target_coordinates)
+    set_transformation(sdata2[sdata_group_key], rotation, to_coordinate_system=target_coordinates)
+    set_transformation(sdata2[sdata_shape_key], rotation, to_coordinate_system=target_coordinates)
+    set_transformation(sdata2[sdata_polygon_key], rotation, to_coordinate_system=target_coordinates)
+
+    # convert to rotated coordinates
+    sdata3 = sdata2.transform_to_coordinate_system(target_coordinates)
+    df_transcripts = sdata3[sdata_transcript_key].compute()
+    df_celltypes = sdata3[sdata_group_key].compute()
+
+    # parametrage
+    x_min = df_transcripts.x.min()
+    total_x = df_transcripts.x.max() - df_transcripts.x.min()
+    step_number = 50
+    step = total_x / step_number  # microns
+
+    # print("total_x=", total_x)
+    # print("step=", step)
+    cats = sdata.table.obs[label_obs_key].cat.categories.tolist()
+    colors = list(sdata.table.uns[label_obs_key + "_colors"])
+    mypal = dict(zip(cats, colors))
+    mypal = {x: mypal[x] for x in group_lst}
+
+    vals = pd.DataFrame({"microns": [], "count": [], "gene": []})
+    for g in range(0, len(gene_lst)):
+        df2 = df_transcripts[df_transcripts.gene == gene_lst[g]]
+        df2.shape[0] / step_number
+        for i in range(0, step_number):
+            new_row = {
+                "microns": (x_min + (i + 0.5) * step),
+                "count": df2[(df2.x > (x_min + i * step)) & (df2.x < (x_min + (i + 1) * step))].shape[0],
+                "gene": gene_lst[g],
+            }
+            vals = pd.concat([vals, pd.DataFrame([new_row])], ignore_index=True)
+
+    valct = pd.DataFrame({"microns": [], "count": [], "cell_type": []})
+    for ct in range(0, len(group_lst)):
+        df2 = df_celltypes[df_celltypes.cell_type == group_lst[ct]]
+        for i in range(0, step_number):
+            new_row = {
+                "microns": (x_min + (i + 0.5) * step),
+                "count": df2[(df2.x > (x_min + i * step)) & (df2.x < (x_min + (i + 1) * step))].shape[0],
+                "cell_type": group_lst[ct],
+            }
+            valct = pd.concat([valct, pd.DataFrame([new_row])], ignore_index=True)
+
+    fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, sharex=True)
+    sdata3.pl.render_shapes(
+        elements=sdata_polygon_key, color=label_obs_key, palette=list(mypal.values()), groups=group_lst
+    ).pl.show(ax=ax1)
+    sns.lineplot(data=valct, x="microns", y="count", hue="cell_type", linewidth=0.9, palette=mypal, ax=ax2)
+    ax2.get_legend().remove()
+    sns.lineplot(
+        data=vals, x="microns", y="count", hue="gene", linewidth=0.9, palette=sns.color_palette("Paired"), ax=ax3
+    )
+    ax3.legend(bbox_to_anchor=(1, 1.1))
+
+    ax1.set_title(poly_name + " shape (" + sdata.table.obs.slide.unique().tolist()[0] + ")")
+    # ax1.axes.get_yaxis().set_visible(False)
+    ax2.set_title("Number of cells per cell types (" + str(int(step)) + " µm bins)")
+    ax3.set_title("Total gene expression (" + str(int(step)) + " µm bins)")
+
+    plt.tight_layout()
+
+    if save is True:
+        print("saving " + poly_name + ".pdf")
+        plt.savefig(poly_name + ".pdf", format="pdf", bbox_inches="tight")
 
 
 def view_region(
@@ -345,6 +483,37 @@ def view_pop(
                 x="x_pix", y="y_pix", data=ad.obs, s=pt_size, hue=celltypelabel, ax=axs[i], palette=mypal
             ).set_title(maliste[i])
         plt.setp(axs[i].get_legend().get_texts(), fontsize="6")
+
+
+def cluster_small_multiples(adata, clust_key, size=60, frameon=False, legend_loc=None, **kwargs):
+    """cluster_small_multiples
+
+    Parameters
+    ----------
+    adata
+        Anndata object.
+    clust_key
+        key to plot
+
+    Returns
+    -------
+    Return the Anndata object of the crop region.
+    """
+    tmp = adata.copy()
+
+    for i, clust in enumerate(adata.obs[clust_key].cat.categories):
+        tmp.obs[clust] = adata.obs[clust_key].isin([clust]).astype("category")
+        tmp.uns[clust + "_colors"] = ["#d3d3d3", adata.uns[clust_key + "_colors"][i]]
+
+    sc.pl.umap(
+        tmp,
+        groups=tmp.obs[clust].cat.categories[1:].values,
+        color=adata.obs[clust_key].cat.categories.tolist(),
+        size=size,
+        frameon=frameon,
+        legend_loc=legend_loc,
+        **kwargs,
+    )
 
 
 def json_zip(j):

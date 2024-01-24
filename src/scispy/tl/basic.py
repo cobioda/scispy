@@ -1,4 +1,5 @@
 import anndata as an
+import dask.dataframe as dd
 import decoupler as dc
 import geopandas as gpd
 import numpy as np
@@ -15,18 +16,18 @@ from pydeseq2.ds import DeseqStats
 from shapely import affinity
 from shapely.geometry import Polygon
 from shapely.ops import nearest_points
-from spatialdata.models import ShapesModel
+from spatialdata.models import PointsModel, ShapesModel
 from spatialdata.transformations import Identity
 
 from scispy.io.basic import load_bounds_pixel
 
 
-def add_anatomical(
+def add_to_shapes(
     sdata: sd.SpatialData,
-    file: str,
-    scale: float = 0.50825,
+    shape_file: str,
+    shape_key: str = "anatomical",
+    scale_factor: float = 0.50825,  # if shapes comes from xenium explorer
     target_coordinates: str = "microns",
-    shapes_name: str = "anatomical",
 ):
     """Add anatomical shapes to sdata.
 
@@ -34,21 +35,22 @@ def add_anatomical(
     ----------
     sdata
         SpatialData object.
-    file
+    shape_file
         coordinates.csv file from xenium explorer (region = "normal_1")
         # vi coordinates.csv -> remove 2 first # lines
         # dos2unix coordinates.csv
-    scale
+    shape_name
+        name of shapes
+    scale_factor
         scale factor to get back to real microns
     target_coordinates
         target_coordinates system of sdata object
-    shapes_name
-        name of anatomical shapes object
+
 
     """
     names = []
     polygons = []
-    df = pd.read_csv(file)
+    df = pd.read_csv(shape_file)
     for name, group in df.groupby("Selection"):
         if len(group) >= 3:
             poly = Polygon(zip(group.X, group.Y))
@@ -57,13 +59,13 @@ def add_anatomical(
 
     d = {"name": names, "geometry": polygons}
     gdf = gpd.GeoDataFrame(d)
-    gdf[["type", "replicate"]] = gdf["name"].str.split("_", expand=True)
-    gdf = gdf.drop(["name"], axis=1)
+    gdf[["regionType", "regionReplicate"]] = gdf["name"].str.split("_", expand=True)
+    gdf = gdf.rename(columns={"name": "regionName"})
 
     # scale because it comes from the xenium explorer !!!
-    gdf.geometry = gdf.geometry.scale(xfact=scale, yfact=scale, origin=(0, 0))
+    gdf.geometry = gdf.geometry.scale(xfact=scale_factor, yfact=scale_factor, origin=(0, 0))
 
-    # substract the initila image offset (x,y)
+    # substract the initial image offset (x,y)
     image_object_key = list(sdata.images.keys())[0]
     matrix = sd.transformations.get_transformation(sdata[image_object_key], target_coordinates).to_affine_matrix(
         input_axes=["x", "y"], output_axes=["x", "y"]
@@ -72,15 +74,61 @@ def add_anatomical(
     y_translation = matrix[1][2]
     gdf.geometry = gdf.geometry.apply(affinity.translate, xoff=x_translation, yoff=y_translation)
 
-    sdata.add_shapes(shapes_name, ShapesModel.parse(gdf, transformations={target_coordinates: Identity()}))
+    gdf.regionType = gdf.regionType.astype("category")
+
+    sdata.add_shapes(
+        shape_key, ShapesModel.parse(gdf, transformations={target_coordinates: Identity()}), overwrite=True
+    )
 
 
-def add_obs_anatomical(
+def add_to_obs_for_pseudobulk(
     sdata: sd.SpatialData,
-    file: str,
-    scale: float = 0.50825,
+    shape_key: str = "anatomical",
+    region_name_key: str = "regionName",
+    region_type_key: str = "regionType",
+    region_replicate_key: str = "regionReplicate",
+):
+    """Add anatomical shape annotation to sdata.table.obs
+
+    Parameters
+    ----------
+    sdata
+        SpatialData object.
+    shape_name
+        name of anatomical shapes
+    group_key
+        key of group
+    replicate_key
+        key of replicate
+    condition_key
+        key of condition
+
+    """
+    sdata.table.obs[region_name_key] = "#NA"
+    sdata.table.obs[region_type_key] = "#NA"
+    sdata.table.obs[region_replicate_key] = "#NA"
+
+    for i in range(0, len(sdata[shape_key])):
+        poly = sdata[shape_key].geometry[i]
+        region_name = sdata[shape_key][region_name_key][i]
+        region_type = sdata[shape_key][region_type_key][i]
+        region_replicate = sdata[shape_key][region_replicate_key][i]
+
+        sdata2 = sd.polygon_query(
+            sdata, poly, target_coordinate_system="microns", filter_table=True, points=False, shapes=True, images=True
+        )
+        sdata.table.obs.loc[sdata2.table.obs.index.to_list(), region_name_key] = region_name
+        sdata.table.obs.loc[sdata2.table.obs.index.to_list(), region_type_key] = region_type
+        sdata.table.obs.loc[sdata2.table.obs.index.to_list(), region_replicate_key] = region_replicate
+
+
+def add_to_points(
+    sdata: sd.SpatialData,
+    label_obs_key: str = "cell_type",
+    x_obs_key: str = "center_x",
+    y_obs_key: str = "center_y",
+    sdata_group_key: str = "celltypes",
     target_coordinates: str = "microns",
-    shapes_name: str = "anatomical",
 ):
     """Add anatomical shapes to sdata.
 
@@ -88,49 +136,33 @@ def add_obs_anatomical(
     ----------
     sdata
         SpatialData object.
-    file
-        coordinates.csv file from xenium explorer (region = "normal_1")
-        # vi coordinates.csv -> remove 2 first # lines
-        # dos2unix coordinates.csv
-    scale
-        scale factor to get back to real microns
+    label_obs_key
+        label_key in sdata.table.obs to add
+    x_obs_key
+        x coordinate in sdata.table.obs
+    y_obs_key
+        y coordinate in sdata.table.obs
+    point_key
+        point key to add to sdata
     target_coordinates
         target_coordinates system of sdata object
-    shapes_name
-        name of anatomical shapes object
 
     """
-    names = []
-    polygons = []
-    df = pd.read_csv(file)
-    for name, group in df.groupby("Selection"):
-        if len(group) >= 3:
-            poly = Polygon(zip(group.X, group.Y))
-            polygons.append(poly)
-            names.append(name)
+    # on ne peux pas faire ça
+    # sdata['PGW9-2-2A_region_0_polygons']['cell_type'] = sdata.table.obs.cell_type
 
-    d = {"name": names, "geometry": polygons}
-    gdf = gpd.GeoDataFrame(d)
-    gdf[["type", "replicate"]] = gdf["name"].str.split("_", expand=True)
-    gdf = gdf.drop(["name"], axis=1)
-
-    # scale because it comes from the xenium explorer !!!
-    gdf.geometry = gdf.geometry.scale(xfact=scale, yfact=scale, origin=(0, 0))
-
-    # substract the initila image offset (x,y)
-    image_object_key = list(sdata.images.keys())[0]
-    matrix = sd.transformations.get_transformation(sdata[image_object_key], target_coordinates).to_affine_matrix(
-        input_axes=["x", "y"], output_axes=["x", "y"]
+    df = pd.DataFrame(sdata.table.obs[[label_obs_key, x_obs_key, y_obs_key]])
+    ddf = dd.from_pandas(df, npartitions=1)
+    points = PointsModel.parse(
+        ddf,
+        coordinates={"x": x_obs_key, "y": y_obs_key},
+        transformations={target_coordinates: Identity()},
     )
-    x_translation = matrix[0][2]
-    y_translation = matrix[1][2]
-    gdf.geometry = gdf.geometry.apply(affinity.translate, xoff=x_translation, yoff=y_translation)
-
-    sdata.add_shapes(shapes_name, ShapesModel.parse(gdf, transformations={target_coordinates: Identity()}))
+    sdata.add_points(sdata_group_key, points, overwrite=True)
 
 
 def do_pseudobulk(
-    concat: an.AnnData,
+    adata: an.AnnData,
     sample_col: str,
     groups_col: str,
     condition_col: str,
@@ -159,8 +191,10 @@ def do_pseudobulk(
 
     sns.set(font_scale=0.5)
 
+    adata_clean = adata[adata.obs[condition_col].isin([condition_1, condition_2])].copy()
+
     pdata = dc.get_pseudobulk(
-        concat,
+        adata_clean,
         sample_col=sample_col,  # zone
         groups_col=groups_col,  # celltype
         layer=layer,
@@ -171,7 +205,7 @@ def do_pseudobulk(
     dc.plot_psbulk_samples(pdata, groupby=[sample_col, groups_col], figsize=figsize)
 
     if celltypes is None:
-        celltypes = concat.obs[groups_col].cat.categories.tolist()
+        celltypes = adata_clean.obs[groups_col].cat.categories.tolist()
 
     df_total = pd.DataFrame()
     for ct in celltypes:
@@ -190,11 +224,10 @@ def do_pseudobulk(
                     design_factors=condition_col,
                     ref_level=[condition_col, condition_1],
                     refit_cooks=True,
-                    n_cpus=8,
                     quiet=True,
                 )
                 dds.deseq2()
-                stat_res = DeseqStats(dds, contrast=[condition_col, condition_1, condition_2], n_cpus=8, quiet=True)
+                stat_res = DeseqStats(dds, contrast=[condition_col, condition_1, condition_2], quiet=True)
 
                 stat_res.summary()
                 coeff_str = condition_col + "_" + condition_2 + "_vs_" + condition_1
@@ -231,13 +264,13 @@ def do_pseudobulk(
                     results_df.to_csv(save_prefix + "_" + ct + ".csv")
                     fig.savefig(save_prefix + "_" + ct + ".pdf", bbox_inches="tight")
 
-    pivlfc = pd.pivot_table(df_total, values=["log2FoldChange"], index=["index"], columns=[groups_col], fill_value=0)
-    pd.pivot_table(df_total, values=["pvals"], index=["index"], columns=[groups_col], fill_value=0)
-    # plot pivot table as heatmap using seaborn
-    sns.clustermap(pivlfc, cmap="vlag", figsize=(6, 6))
-    # plt.setp( ax.xaxis.get_majorticklabels(), rotation=90)
-    plt.tight_layout()
-    plt.show()
+    # pivlfc = pd.pivot_table(df_total, values=["log2FoldChange"], index=["index"], columns=[groups_col], fill_value=0)
+    # pd.pivot_table(df_total, values=["pvals"], index=["index"], columns=[groups_col], fill_value=0)
+    ## plot pivot table as heatmap using seaborn
+    # sns.clustermap(pivlfc, cmap="vlag", figsize=(6, 6))
+    ## plt.setp( ax.xaxis.get_majorticklabels(), rotation=90)
+    # plt.tight_layout()
+    # plt.show()
 
     return df_total
 

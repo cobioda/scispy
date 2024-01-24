@@ -39,9 +39,10 @@ def filter_and_run_scanpy_sdata(
 
     print("remaining cells=", sdata.table.shape[0])
 
-    sdata.table.raw = sdata.table
     sc.pp.normalize_total(sdata.table)
     sc.pp.log1p(sdata.table)
+    sdata.table.raw = sdata.table
+
     sc.pp.scale(sdata.table, max_value=10)
     sc.tl.pca(sdata.table, svd_solver="arpack")
     sc.pp.neighbors(sdata.table, n_neighbors=10)
@@ -83,9 +84,9 @@ def filter_and_run_scanpy(
     print("mean tr./cell=", adata.obs[label_count].mean())
     print("median tr./cell=", adata.obs[label_count].median())
 
-    adata.raw = adata
     sc.pp.normalize_total(adata)
     sc.pp.log1p(adata)
+    adata.raw = adata
     sc.pp.scale(adata, max_value=10)
     sc.tl.pca(adata, svd_solver="arpack")
     sc.pp.neighbors(adata, n_neighbors=10)
@@ -105,6 +106,7 @@ def annotate(
     ad_ref: an.AnnData,
     label_ref: str = "celltype",
     label_key: str = "celltype",
+    layer: str = "counts",
     metaref2add: str = None,
 ) -> int:
     """Transfert cell type label from single cell to spatial annData object using SCVI (scArches developpers credits for final knn neighbor transfert)
@@ -119,6 +121,8 @@ def annotate(
         .obs key in single-cell reference object.
     label_key
         .obs key in spatial object.
+    layer
+        layer in which we can find the raw count values.
     metaref2add
         .obs key in single-cell reference object to transfert to spatial.
 
@@ -145,11 +149,9 @@ def annotate(
     # print("gene missed = ", missed)
 
     # Concatenate the datasets
+    # both needs to have the count values in the layer "counts" or layer received
     concat = ad_ref.concatenate(ad_emb, batch_key="tech", batch_categories=["10x", "MERFISH"]).copy()
-    concat.layers["counts"] = concat.raw.X.copy()
-    # sc.pp.normalize_total(concat, target_sum=1e4)
-    # sc.pp.log1p(concat)
-    # concat.raw = concat  # keep full dimension safe
+    # concat.layers[layer] = concat.raw.X.copy()
 
     # Use the annotations from the 10x, and treat the MERFISH as unlabeled
     concat.obs[f"{label_key}"] = "nan"
@@ -157,7 +159,7 @@ def annotate(
     concat.obs[f"{label_key}"][mask] = ad_ref.obs[label_ref].values
 
     # Create the scVI latent space
-    scvi.model.SCVI.setup_anndata(concat, layer="counts", batch_key="tech")
+    scvi.model.SCVI.setup_anndata(concat, layer=layer, batch_key="tech")
     vae = scvi.model.SCVI(concat)
     # Train the model
     vae.train()
@@ -165,7 +167,7 @@ def annotate(
     # Register the object and run scANVI
     scvi.model.SCANVI.setup_anndata(
         concat,
-        layer="counts",
+        layer=layer,
         batch_key="tech",
         labels_key=label_key,
         unlabeled_category="nan",
