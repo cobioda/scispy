@@ -61,47 +61,7 @@ def filter_and_run_scanpy_sdata(
     return 0
 
 
-def filter_and_run_scanpy(
-    adata: an.AnnData, min_counts: int = 10, label_count="n_counts", resolution: float = 0.5, key: str = "leiden"
-) -> int:
-    """Filter and run scanpy analysis.
-
-    Parameters
-    ----------
-    adata
-        Anndata object.
-    min_counts
-        minimum transcript count to keep cell.
-
-    Returns
-    -------
-    Anndata analyzed object.
-    """
-    print("total cells=", adata.shape[0])
-    sc.pp.filter_cells(adata, min_counts=min_counts)
-    print("remaining cells=", adata.shape[0])
-
-    print("mean tr./cell=", adata.obs[label_count].mean())
-    print("median tr./cell=", adata.obs[label_count].median())
-
-    sc.pp.normalize_total(adata)
-    sc.pp.log1p(adata)
-    adata.raw = adata
-    sc.pp.scale(adata, max_value=10)
-    sc.tl.pca(adata, svd_solver="arpack")
-    sc.pp.neighbors(adata, n_neighbors=10)
-    sc.tl.umap(adata)
-    sc.tl.leiden(adata, resolution=resolution, key_added=key)
-
-    fig, axs = plt.subplots(1, 2, figsize=(20, 6))
-    sc.pl.embedding(adata, "umap", color=key, ax=axs[0], show=False)
-    sq.pl.spatial_scatter(adata, color=key, shape=None, size=1, ax=axs[1])
-    plt.tight_layout()
-
-    return 0
-
-
-def annotate(
+def scvi_annotate(
     ad_spatial: an.AnnData,
     ad_ref: an.AnnData,
     label_ref: str = "celltype",

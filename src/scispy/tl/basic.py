@@ -7,19 +7,13 @@ import pandas as pd
 import scanpy as sc
 import seaborn as sns
 import spatialdata as sd
-import squidpy as sq
 from matplotlib import pyplot as plt
-from matplotlib.collections import PatchCollection
-from matplotlib.patches import Polygon as mplPolygon
 from pydeseq2.dds import DeseqDataSet
 from pydeseq2.ds import DeseqStats
 from shapely import affinity
 from shapely.geometry import Polygon
-from shapely.ops import nearest_points
 from spatialdata.models import PointsModel, ShapesModel
 from spatialdata.transformations import Identity
-
-from scispy.io.basic import load_bounds_pixel
 
 
 def add_to_shapes(
@@ -320,140 +314,3 @@ def do_pseudobulk(
     # plt.show()
 
     return df_total
-
-
-def compare_seg(
-    adata_1: an.AnnData,
-    adata_2: an.AnnData,
-    color_key: str,
-    x: int,
-    y: int,
-    size_x: int,
-    size_y: int,
-    lw: float = 1,
-    image_cmap: str = "bone",
-    mypal: dict = None,
-    figsize: tuple = (8, 8),
-) -> int:
-    """Compare segmentation between 2 anndata object of the same slice.
-
-    Parameters
-    ----------
-    adata
-        Anndata object.
-
-    Returns
-    -------
-    Return segmentation comparison
-    """
-    fig, ax = plt.subplots(figsize=figsize)
-
-    library_id = adata_1.obs.library_id.cat.categories.tolist()[0]
-    img = sq.im.ImageContainer(adata_1.uns["spatial"][library_id]["images"]["hires"], library_id=library_id)
-    crop1 = img.crop_corner(y, x, size=(size_y, size_x))
-    adata_crop = crop1.subset(adata_1, spatial_key="pixel")
-    crop1.show(layer="image", ax=ax, cmap=image_cmap)
-
-    ser_color = pd.Series(mypal)
-    pts = adata_crop.obs[["x_pix", "y_pix", color_key]]
-    pts.x_pix -= x
-    pts.y_pix -= y
-    ax = sns.scatterplot(
-        x="x_pix", y="y_pix", s=0, alpha=0.5, edgecolors=color_key, data=pts, hue=color_key, palette=mypal
-    )
-
-    # full cell segmentation
-    adata_crop = load_bounds_pixel(adata_crop, library_id)
-
-    currentCells = []
-    typedCells = []
-    for cell_id in adata_crop.obs.index:
-        currentCells.append(adata_crop.obs.bounds[cell_id])
-        typedCells.append(adata_crop.obs[color_key][cell_id])
-
-    polygon_data = []
-    for inst_index in range(len(currentCells)):
-        inst_cell = currentCells[inst_index]
-        df_poly_z = pd.DataFrame(inst_cell).transpose()
-        df_poly_z.columns.tolist()
-        xxx = df_poly_z.values - [x, y]
-        inst_poly = np.array(xxx.tolist())
-        polygon_data.append(inst_poly)
-
-    polygons = [mplPolygon(polygon_data[i].reshape(-1, 2)) for i in range(len(polygon_data))]
-    ax.add_collection(PatchCollection(polygons, fc=ser_color[typedCells], ec="None", alpha=0.5))
-    # axs[1].add_collection(PatchCollection(polygons, fc="none", ec=ser_color[typedCells], lw=1))
-
-    # then nuclei segmentation
-    adata_crop_nuc = crop1.subset(adata_2, spatial_key="pixel")
-    adata_crop_nuc = load_bounds_pixel(adata_crop_nuc, library_id)
-
-    currentCells = []
-    typedCells = []
-    for cell_id in adata_crop_nuc.obs.index:
-        currentCells.append(adata_crop_nuc.obs.bounds[cell_id])
-        typedCells.append(adata_crop_nuc.obs[color_key][cell_id])
-
-    polygon_data = []
-    for inst_index in range(len(currentCells)):
-        inst_cell = currentCells[inst_index]
-        df_poly_z = pd.DataFrame(inst_cell).transpose()
-        df_poly_z.columns.tolist()
-        xxx = df_poly_z.values - [x, y]
-        inst_poly = np.array(xxx.tolist())
-        polygon_data.append(inst_poly)
-
-    polygons = [mplPolygon(polygon_data[i].reshape(-1, 2)) for i in range(len(polygon_data))]
-    ax.add_collection(PatchCollection(polygons, fc="none", ec=ser_color[typedCells], lw=1, ls="--"))
-
-    plt.tight_layout()
-
-    return 0
-
-
-def compare_label_knn(
-    adata_1: an.AnnData,
-    adata_2: an.AnnData,
-    color_key: str = "celltype",
-    image_cmap: str = "viridis",
-    figsize: tuple = (8, 7),
-) -> int:
-    """Compare segmentation between 2 anndata object of the same slice.
-
-    Parameters
-    ----------
-    adata
-        Anndata object.
-
-    Returns
-    -------
-    Return segmentation comparison
-    """
-    df = adata_1.obs[[color_key, "center_x", "center_y"]]
-    gpd1 = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.center_x, df.center_y))
-
-    dfnuc = adata_2.obs[[color_key, "center_x", "center_y"]]
-    gpd2 = gpd.GeoDataFrame(dfnuc, geometry=gpd.points_from_xy(dfnuc.center_x, dfnuc.center_y))
-
-    # unary union of the gpd2 geomtries
-    pts3 = gpd2.geometry.unary_union
-
-    def near(point, pts=pts3):
-        # find the nearest point and return the corresponding Place value
-        nearest = gpd2.geometry == nearest_points(point, pts)[1]
-        return gpd2[nearest][color_key][0]
-
-    gpd1["Nearest"] = gpd1.apply(lambda row: near(row.geometry), axis=1)
-
-    print("entity_1  = ", len(gpd1))
-    print("entity_2  = ", len(gpd2))
-    print("identical = ", len(gpd1[gpd1[color_key] == gpd1.Nearest]))
-
-    # Build co-occurrence matrix and set diagonal to zero.
-    ct = 100 * pd.crosstab(gpd1["celltype"], gpd1["Nearest"], normalize="index")
-
-    f, ax = plt.subplots(figsize=figsize)
-    sns.heatmap(ct, cmap=image_cmap)
-    plt.show()
-
-    return 0
