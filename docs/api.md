@@ -1,10 +1,13 @@
 # API
 
+```{eval-rst}
+.. module:: scispy
+```
+
 ## input/output
 
 ```{eval-rst}
 .. module:: scispy.io
-.. currentmodule:: scispy
 
 .. autosummary::
     :toctree: generated
