@@ -25,7 +25,7 @@ from scispy.io.basic import load_bounds_pixel
 def add_to_shapes(
     sdata: sd.SpatialData,
     shape_file: str,
-    shape_key: str = "anatomical",
+    shape_key: str = "myshapes",
     scale_factor: float = 0.50825,  # if shapes comes from xenium explorer
     target_coordinates: str = "microns",
 ):
@@ -46,7 +46,6 @@ def add_to_shapes(
     target_coordinates
         target_coordinates system of sdata object
 
-
     """
     names = []
     polygons = []
@@ -59,8 +58,8 @@ def add_to_shapes(
 
     d = {"name": names, "geometry": polygons}
     gdf = gpd.GeoDataFrame(d)
-    gdf[["regionType", "regionReplicate"]] = gdf["name"].str.split("_", expand=True)
-    gdf = gdf.rename(columns={"name": "regionName"})
+    # gdf[["mytype", "myreplicate"]] = gdf["name"].str.split("_", expand=True)
+    # gdf = gdf.rename(columns={"name": "myname"})
 
     # scale because it comes from the xenium explorer !!!
     gdf.geometry = gdf.geometry.scale(xfact=scale_factor, yfact=scale_factor, origin=(0, 0))
@@ -74,7 +73,7 @@ def add_to_shapes(
     y_translation = matrix[1][2]
     gdf.geometry = gdf.geometry.apply(affinity.translate, xoff=x_translation, yoff=y_translation)
 
-    gdf.regionType = gdf.regionType.astype("category")
+    # gdf.regionType = gdf.regionType.astype("category")
 
     sdata.add_shapes(
         shape_key, ShapesModel.parse(gdf, transformations={target_coordinates: Identity()}), overwrite=True
@@ -83,10 +82,10 @@ def add_to_shapes(
 
 def add_to_obs_for_pseudobulk(
     sdata: sd.SpatialData,
-    shape_key: str = "anatomical",
-    region_name_key: str = "regionName",
-    region_type_key: str = "regionType",
-    region_replicate_key: str = "regionReplicate",
+    shape_key: str = "myshapes",
+    myname_key: str = "myname",
+    mytype_key: str = "mytype",
+    myreplicate_key: str = "myreplicate",
 ):
     """Add anatomical shape annotation to sdata.table.obs
 
@@ -95,31 +94,31 @@ def add_to_obs_for_pseudobulk(
     sdata
         SpatialData object.
     shape_name
-        name of anatomical shapes
-    group_key
+        sdata shape element key
+    myname_key
         key of group
-    replicate_key
+    mytype_key
+        key of type
+    myreplicate_key
         key of replicate
-    condition_key
-        key of condition
 
     """
-    sdata.table.obs[region_name_key] = "#NA"
-    sdata.table.obs[region_type_key] = "#NA"
-    sdata.table.obs[region_replicate_key] = "#NA"
+    sdata.table.obs[myname_key] = "#NA"
+    sdata.table.obs[mytype_key] = "#NA"
+    sdata.table.obs[myreplicate_key] = "#NA"
 
     for i in range(0, len(sdata[shape_key])):
         poly = sdata[shape_key].geometry[i]
-        region_name = sdata[shape_key][region_name_key][i]
-        region_type = sdata[shape_key][region_type_key][i]
-        region_replicate = sdata[shape_key][region_replicate_key][i]
+        myname = sdata[shape_key][myname_key][i]
+        mytype = sdata[shape_key][mytype_key][i]
+        myreplicate = sdata[shape_key][myreplicate_key][i]
 
         sdata2 = sd.polygon_query(
             sdata, poly, target_coordinate_system="microns", filter_table=True, points=False, shapes=True, images=True
         )
-        sdata.table.obs.loc[sdata2.table.obs.index.to_list(), region_name_key] = region_name
-        sdata.table.obs.loc[sdata2.table.obs.index.to_list(), region_type_key] = region_type
-        sdata.table.obs.loc[sdata2.table.obs.index.to_list(), region_replicate_key] = region_replicate
+        sdata.table.obs.loc[sdata2.table.obs.index.to_list(), myname_key] = myname
+        sdata.table.obs.loc[sdata2.table.obs.index.to_list(), mytype_key] = mytype
+        sdata.table.obs.loc[sdata2.table.obs.index.to_list(), myreplicate_key] = myreplicate
 
 
 def add_to_points(
@@ -151,6 +150,9 @@ def add_to_points(
     # on ne peux pas faire ça
     # sdata['PGW9-2-2A_region_0_polygons']['cell_type'] = sdata.table.obs.cell_type
 
+    # could also be done using centroid on polygons but ['x','y'] columns is great for counting along x axis in scis.pl.plot_shape_along_axis()
+    # gdf = sdata['PGW9-2-2A_region_0_polygons'].centroid
+
     df = pd.DataFrame(sdata.table.obs[[label_obs_key, x_obs_key, y_obs_key]])
     ddf = dd.from_pandas(df, npartitions=1)
     points = PointsModel.parse(
@@ -159,6 +161,51 @@ def add_to_points(
         transformations={target_coordinates: Identity()},
     )
     sdata.add_points(sdata_group_key, points, overwrite=True)
+
+
+def get_sdata_polygon(
+    sdata: sd.SpatialData,
+    shape_name_key: str = "myshapes",
+    polygon_name_key: str = "name",
+    polygon_name: str = None,
+    color_key: str = "cell_type",
+    target_coordinates: str = "microns",
+    figsize: tuple = (8, 2),
+) -> sd.SpatialData:
+    """Get sdata polygon object
+
+    Parameters
+    ----------
+    sdata
+        SpatialData object.
+    polygon_name_key
+        polygon name key
+    polygon_name
+        polygon name
+    Returns
+    -------
+    Return sdata polygon object.
+    """
+    poly = sdata[shape_name_key][sdata[shape_name_key][polygon_name_key] == polygon_name].geometry.item()
+    sdata_poly = sd.polygon_query(
+        sdata,
+        poly,
+        target_coordinate_system=target_coordinates,
+        filter_table=True,
+        points=True,
+        shapes=True,
+        images=True,
+    )
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
+    sdata.pl.render_images().pl.show(ax=ax1)
+    sdata_poly.pp.get_elements([shape_name_key]).pl.render_shapes(
+        outline=True, fill_alpha=0.25, outline_color="red"
+    ).pl.show(ax=ax1)
+    sc.pl.embedding(sdata_poly.table, "umap", color=color_key, ax=ax2)
+    plt.tight_layout()
+
+    return sdata_poly
 
 
 def do_pseudobulk(

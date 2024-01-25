@@ -25,19 +25,19 @@ from spatialdata.transformations import (
 from scispy.io.basic import load_bounds_pixel
 
 
-def plot_shape_along_x(
+def plot_shape_along_axis(
     sdata: sd.SpatialData,
     group_lst: tuple = ["eOSNs", "Deuterosomal"],  # the cell types to consider
     gene_lst: tuple = ["KRT19", "SOX2"],  # the genes to consider
-    label_obs_key: str = "cell_type",
-    poly_name: str = "epi_1",
-    poly_name_key: str = "regionName",
-    sdata_shape_key: str = "anatomical",
-    sdata_transcript_key: str = "PGW9-2-2A_region_0_transcripts",
-    sdata_polygon_key: str = "PGW9-2-2A_region_0_polygons",
+    label_obs_key: str = "celltype_spatial",
+    poly_name: str = "polygone_name",
+    poly_name_key: str = "name",
+    sdata_shape_key: str = "myshapes",
     sdata_group_key: str = "celltypes",
     target_coordinates: str = "microns",
-    theta: float = math.pi / 6,
+    scale_expr: bool = False,
+    bin_size: int = 50,
+    rotation_angle: int = 0,
     save: bool = False,
 ):
     """Analyse a polygon shape stored, rotate it and view celltype or gene expression along x coordinate
@@ -63,95 +63,121 @@ def plot_shape_along_x(
     if group_lst is None:
         group_lst = sdata.table.obs[label_obs_key].unique().tolist()
 
-    # extract polytgone to work with
-    poly = sdata[sdata_shape_key][sdata[sdata_shape_key][poly_name_key] == poly_name].geometry.item()
-    sdata2 = sd.polygon_query(
-        sdata,
-        poly,
-        target_coordinate_system=target_coordinates,
-        filter_table=True,
-        points=True,
-        shapes=True,
-        images=True,
-    )
+    # extract polygon to work with
+    # poly = sdata[sdata_shape_key][sdata[sdata_shape_key][poly_name_key] == poly_name].geometry.item()
+    # sdata2 = sd.polygon_query(
+    #    sdata,
+    #    poly,
+    #    target_coordinate_system=target_coordinates,
+    #    filter_table=True,
+    #    points=True,
+    #    shapes=True,
+    #    images=True,
+    # )
 
-    # perform rotation of shape
-    rotation = Affine(
-        [
-            [math.cos(theta), -math.sin(theta), 0],
-            [math.sin(theta), math.cos(theta), 0],
-            [0, 0, 1],
-        ],
-        input_axes=("x", "y"),
-        output_axes=("x", "y"),
-    )
-    # translation = Translation([0, 0], axes=("x", "y"))
-    # sequence = Sequence([rotation, translation])
+    # rotate the shape along x axis
+    if rotation_angle != 0:
+        theta = math.pi / (360 / rotation_angle)
+        # perform rotation of shape
+        rotation = Affine(
+            [
+                [math.cos(theta), -math.sin(theta), 0],
+                [math.sin(theta), math.cos(theta), 0],
+                [0, 0, 1],
+            ],
+            input_axes=("x", "y"),
+            output_axes=("x", "y"),
+        )
+        # translation = Translation([0, 0], axes=("x", "y"))
+        # sequence = Sequence([rotation, translation])
 
-    set_transformation(sdata2[sdata_transcript_key], rotation, to_coordinate_system=target_coordinates)
-    set_transformation(sdata2[sdata_group_key], rotation, to_coordinate_system=target_coordinates)
-    set_transformation(sdata2[sdata_shape_key], rotation, to_coordinate_system=target_coordinates)
-    set_transformation(sdata2[sdata_polygon_key], rotation, to_coordinate_system=target_coordinates)
+        elements = list(sdata.points.keys()) + list(sdata.shapes.keys())
+        for i in range(0, len(elements)):
+            set_transformation(sdata[elements[i]], rotation, to_coordinate_system=target_coordinates)
 
-    # convert to rotated coordinates
-    sdata3 = sdata2.transform_to_coordinate_system(target_coordinates)
+    # convert to final coordinates
+    sdata3 = sdata.transform_to_coordinate_system(target_coordinates)
+
+    # get elements key, probably need to do better here in the futur !!
+    sdata_transcript_key = sdata3.table.obs.dataset_id.unique().tolist()[0] + "_transcripts"
+    sdata_polygon_key = sdata3.table.obs.dataset_id.unique().tolist()[0] + "_polygons"
+
+    # compute dataframes
     df_transcripts = sdata3[sdata_transcript_key].compute()
     df_celltypes = sdata3[sdata_group_key].compute()
 
     # parametrage
     x_min = df_transcripts.x.min()
     total_x = df_transcripts.x.max() - df_transcripts.x.min()
-    step_number = 50
-    step = total_x / step_number  # microns
+    step_number = int(total_x / bin_size)
 
-    # print("total_x=", total_x)
-    # print("step=", step)
+    # init color palette
     cats = sdata.table.obs[label_obs_key].cat.categories.tolist()
     colors = list(sdata.table.uns[label_obs_key + "_colors"])
     mypal = dict(zip(cats, colors))
     mypal = {x: mypal[x] for x in group_lst}
 
+    # compute values dataframes
     vals = pd.DataFrame({"microns": [], "count": [], "gene": []})
     for g in range(0, len(gene_lst)):
         df2 = df_transcripts[df_transcripts.gene == gene_lst[g]]
         df2.shape[0] / step_number
         for i in range(0, step_number):
             new_row = {
-                "microns": (x_min + (i + 0.5) * step),
-                "count": df2[(df2.x > (x_min + i * step)) & (df2.x < (x_min + (i + 1) * step))].shape[0],
+                "microns": (x_min + (i + 0.5) * bin_size),
+                "count": df2[(df2.x > (x_min + i * bin_size)) & (df2.x < (x_min + (i + 1) * bin_size))].shape[0],
                 "gene": gene_lst[g],
             }
             vals = pd.concat([vals, pd.DataFrame([new_row])], ignore_index=True)
 
     valct = pd.DataFrame({"microns": [], "count": [], "cell_type": []})
     for ct in range(0, len(group_lst)):
-        df2 = df_celltypes[df_celltypes.cell_type == group_lst[ct]]
+        df2 = df_celltypes[df_celltypes[label_obs_key] == group_lst[ct]]
         for i in range(0, step_number):
             new_row = {
-                "microns": (x_min + (i + 0.5) * step),
-                "count": df2[(df2.x > (x_min + i * step)) & (df2.x < (x_min + (i + 1) * step))].shape[0],
+                "microns": (x_min + (i + 0.5) * bin_size),
+                "count": df2[(df2.x > (x_min + i * bin_size)) & (df2.x < (x_min + (i + 1) * bin_size))].shape[0],
                 "cell_type": group_lst[ct],
             }
             valct = pd.concat([valct, pd.DataFrame([new_row])], ignore_index=True)
 
+    # normalization
+    means_stds = vals.groupby(["gene"])["count"].agg(["mean", "std", "max"]).reset_index()
+    vals = vals.merge(means_stds, on=["gene"])
+    vals["norm_count"] = vals["count"] / vals["max"]
+
+    # draw figure
     fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, sharex=True)
     sdata3.pl.render_shapes(
         elements=sdata_polygon_key, color=label_obs_key, palette=list(mypal.values()), groups=group_lst
     ).pl.show(ax=ax1)
+
     sns.lineplot(data=valct, x="microns", y="count", hue="cell_type", linewidth=0.9, palette=mypal, ax=ax2)
     ax2.get_legend().remove()
-    sns.lineplot(
-        data=vals, x="microns", y="count", hue="gene", linewidth=0.9, palette=sns.color_palette("Paired"), ax=ax3
-    )
-    ax3.legend(bbox_to_anchor=(1, 1.1))
 
+    if scale_expr is True:
+        sns.lineplot(
+            data=vals,
+            x="microns",
+            y="norm_count",
+            hue="gene",
+            linewidth=0.9,
+            palette=sns.color_palette("Paired"),
+            ax=ax3,
+        )
+    else:
+        sns.lineplot(
+            data=vals, x="microns", y="count", hue="gene", linewidth=0.9, palette=sns.color_palette("Paired"), ax=ax3
+        )
+
+    ax3.legend(bbox_to_anchor=(1, 1.1))
     ax1.set_title(poly_name + " shape (" + sdata.table.obs.slide.unique().tolist()[0] + ")")
-    # ax1.axes.get_yaxis().set_visible(False)
-    ax2.set_title("Number of cells per cell types (" + str(int(step)) + " µm bins)")
-    ax3.set_title("Total gene expression (" + str(int(step)) + " µm bins)")
+    ax2.set_title("Number of cells per cell types (" + str(int(bin_size)) + " µm bins)")
+    ax3.set_title("Gene expression (" + str(int(bin_size)) + " µm bins)")
 
     plt.tight_layout()
 
+    # save figure
     if save is True:
         print("saving " + poly_name + ".pdf")
         plt.savefig(poly_name + ".pdf", format="pdf", bbox_inches="tight")
@@ -438,16 +464,16 @@ def view_qc(adata: an.AnnData, library_id: str) -> int:
     return 0
 
 
-def view_pop(
+def plot_compartments(
     adata: an.AnnData,
-    celltypelabel: str = "celltype",
+    celltypelabel: str = "cell_type",
     metalabel: str = "population",
     pt_size: float = 2,
     figsize: tuple = (20, 5),
     zoom: tuple = None,
     mypal: dict = None,
 ):
-    """Scinsit compartment plot.
+    """Plot cells by compartment (i.e. population).
 
     Parameters
     ----------

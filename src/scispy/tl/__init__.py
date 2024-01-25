@@ -5,4 +5,5 @@ from .basic import (
     compare_label_knn,
     compare_seg,
     do_pseudobulk,
+    get_sdata_polygon,
 )

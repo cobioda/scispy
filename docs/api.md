@@ -1,5 +1,17 @@
 # API
 
+## input/output
+
+```{eval-rst}
+.. module:: scispy.io
+.. currentmodule:: scispy
+
+.. autosummary::
+    :toctree: generated
+
+    io.load_sdata_merscope
+```
+
 ## Preprocessing
 
 ```{eval-rst}
@@ -9,7 +21,7 @@
 .. autosummary::
     :toctree: generated
 
-    pp.basic_preproc
+    pp.filter_and_run_scanpy_sdata
 ```
 
 ## Tools
@@ -21,7 +33,7 @@
 .. autosummary::
     :toctree: generated
 
-    tl.basic_tool
+    tl.add_to_shapes
 ```
 
 ## Plotting
@@ -33,6 +45,5 @@
 .. autosummary::
     :toctree: generated
 
-    pl.basic_plot
-    pl.BasicClass
+    pl.plot_shape_along_axis
 ```
