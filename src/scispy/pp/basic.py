@@ -7,9 +7,7 @@ import squidpy as sq
 from matplotlib import pyplot as plt
 
 
-def filter_and_run_scanpy_sdata(
-    sdata: sd.SpatialData, min_counts: int = 20, resolution: float = 0.5, key: str = "leiden"
-) -> int:
+def run_scanpy(sdata: sd.SpatialData, min_counts: int = 20, resolution: float = 0.5, key: str = "leiden"):
     """Filter and run scanpy analysis.
 
     Parameters
@@ -18,10 +16,11 @@ def filter_and_run_scanpy_sdata(
         SpatialData object.
     min_counts
         minimum transcript count to keep cell.
+    resolution
+        resolution for clustering.
+    key
+        key to add for clusters.
 
-    Returns
-    -------
-    Anndata analyzed object.
     """
     print("total cells=", sdata.table.shape[0])
 
@@ -58,8 +57,6 @@ def filter_and_run_scanpy_sdata(
     key = sdata.table.obs.cells_region.unique().tolist()[0]
     sdata.add_shapes(key, sdata[key].loc[sdata.table.obs.index.tolist()], overwrite=True)
 
-    return 0
-
 
 def scvi_annotate(
     ad_spatial: an.AnnData,
@@ -68,8 +65,8 @@ def scvi_annotate(
     label_key: str = "celltype",
     layer: str = "counts",
     metaref2add: str = None,
-) -> int:
-    """Transfert cell type label from single cell to spatial annData object using SCVI (scArches developpers credits for final knn neighbor transfert)
+):
+    """Annotate anndata spatial cells using anndata cells reference using SCVI.
 
     Parameters
     ----------
@@ -86,9 +83,6 @@ def scvi_annotate(
     metaref2add
         .obs key in single-cell reference object to transfert to spatial.
 
-    Returns
-    -------
-    Anndata labeled object.
     """
     ad_spatial.var.index = ad_spatial.var.index.str.upper()
     ad_ref.var.index = ad_ref.var.index.str.upper()
@@ -153,5 +147,3 @@ def scvi_annotate(
         d = pd.Series(ad_ref.obs[f"{metaref2add}"].values, index=ad_ref.obs[f"{label_ref}"]).to_dict()
         ad_spatial.obs[f"{metaref2add}"] = ad_spatial.obs[f"{label_key}"].map(d)
         ad_spatial.obs[f"{metaref2add}"] = ad_spatial.obs[f"{metaref2add}"].astype("category")
-
-    return 0

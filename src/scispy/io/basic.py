@@ -1,13 +1,9 @@
-import numpy as np
-import pandas as pd
 import spatialdata as sd
 import spatialdata_io
 
 
-def load_sdata_merscope(
-    path: str, vpt_outputs: str, region_name: str, slide_name: str, z_layers: int = 2
-) -> sd.SpatialData:
-    """Load vizgen merscope data as a spatialdata object
+def load_merscope(path: str, vpt_outputs: str, region_name: str, slide_name: str, z_layers: int = 2) -> sd.SpatialData:
+    """Load vizgen merscope data as SpatialData object
 
     Parameters
     ----------
@@ -24,7 +20,7 @@ def load_sdata_merscope(
 
     Returns
     -------
-    SpatialData initialized object loaded first using spatialdata_io library
+    SpatialData object
     """
     sdata = spatialdata_io.merscope(
         path=path, vpt_outputs=vpt_outputs, region_name=region_name, slide_name=slide_name, z_layers=z_layers
@@ -33,18 +29,16 @@ def load_sdata_merscope(
     sdata.table.obs_names.name = None
     sdata[key + "_polygons"].index.name = None
 
-    # transformation matrix micron to mosaic pixel
-    transformation_matrix = pd.read_csv(
-        path + "/images/micron_to_mosaic_pixel_transform.csv", header=None, sep=" "
-    ).values
-
     # Transform coordinates to mosaic pixel coordinates
-    temp = sdata.table.obs[["center_x", "center_y"]].values
-    cell_positions = np.ones((temp.shape[0], temp.shape[1] + 1))
-    cell_positions[:, :-1] = temp
-    transformed_positions = np.matmul(transformation_matrix, np.transpose(cell_positions))[:-1]
-    sdata.table.obs["center_x_pix"] = transformed_positions[0, :]
-    sdata.table.obs["center_y_pix"] = transformed_positions[1, :]
+    # transformation_matrix = pd.read_csv(
+    #    path + "/images/micron_to_mosaic_pixel_transform.csv", header=None, sep=" "
+    # ).values
+    # temp = sdata.table.obs[["center_x", "center_y"]].values
+    # cell_positions = np.ones((temp.shape[0], temp.shape[1] + 1))
+    # cell_positions[:, :-1] = temp
+    # transformed_positions = np.matmul(transformation_matrix, np.transpose(cell_positions))[:-1]
+    # sdata.table.obs["center_x_pix"] = transformed_positions[0, :]
+    # sdata.table.obs["center_y_pix"] = transformed_positions[1, :]
     # sdata.table.obs = sdata.table.obs.drop(columns=["min_x", "max_x", "min_y", "max_y"])
 
     # coord_pixels = sdata.table[["center_x_pix", "center_x_pix"]].to_numpy()

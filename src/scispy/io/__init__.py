@@ -1,5 +1,5 @@
-from .basic import load_sdata_merscope
+from .basic import load_merscope
 
 __all__ = [
-    "load_sdata_merscope",
+    "load_merscope",
 ]

@@ -13,7 +13,7 @@
 .. autosummary::
     :toctree: generated
 
-    io.load_sdata_merscope
+    io.load_merscope
 ```
 
 ## Preprocessing
@@ -25,7 +25,7 @@
 .. autosummary::
     :toctree: generated
 
-    pp.filter_and_run_scanpy_sdata
+    pp.run_scanpy
     pp.scvi_annotate
 ```
 
@@ -38,11 +38,11 @@
 .. autosummary::
     :toctree: generated
 
-    tl.get_sdata_polygon
     tl.add_to_shapes
     tl.add_to_points
-    tl.add_to_obs_for_pseudobulk
-    tl.do_pseudobulk
+    tl.get_sdata_polygon
+    tl.prep_pseudobulk
+    tl.run_pseudobulk
 ```
 
 ## Plotting
@@ -55,7 +55,7 @@
     :toctree: generated
 
     pl.plot_shape_along_axis
+    pl.plot_qc
+    pl.plot_per_groups
     pl.get_palette
-    pl.view_qc
-    pl.cluster_small_multiples
 ```

@@ -1,6 +1,5 @@
 import math
 
-import anndata as an
 import numpy as np
 import pandas as pd
 import scanpy as sc
@@ -12,10 +11,9 @@ from spatialdata.transformations import Affine, set_transformation
 
 def plot_shape_along_axis(
     sdata: sd.SpatialData,
-    group_lst: tuple = ["eOSNs", "Deuterosomal"],  # the cell types to consider
-    gene_lst: tuple = ["KRT19", "SOX2"],  # the genes to consider
+    group_lst: tuple = [],  # the cell types to consider
+    gene_lst: tuple = [],  # the genes to consider
     label_obs_key: str = "celltype_spatial",
-    poly_name: str = "polygone_name",
     sdata_group_key: str = "celltypes",
     target_coordinates: str = "microns",
     scale_expr: bool = False,
@@ -23,30 +21,36 @@ def plot_shape_along_axis(
     rotation_angle: int = 0,
     save: bool = False,
 ):
-    """Analyse a polygon shape stored, rotate it and view celltype or gene expression along x coordinate
+    """Analyse cell types occurence and gene expression along x axis of a sdata polygon shape after an evenual rotation
 
     Parameters
     ----------
     sdata
-        SpatialData object.
-    label_obs_key
-        label_key in sdata.table.obs to add
-    shape_key
-        name of shape layer
-    poly_name
-        name of polygone in shape layer
-    poly_name_key
-        where to find poly_name information in geodataframe shape layer
-    groups
+        SpatialData object obtained by tl.get_sdata_polygon()
+    group_lst
         group list to consider (related to label_obs_key)
+    gene_lst
+        gene list to consider
+    label_obs_key
+        label_key in sdata.table.obs to consider
+    sdata_group_key
+        SpatialData element where to find the group label
     target_coordinates
         target_coordinates system of sdata object
+    scale_expr
+        wether or not to scale the gene expression plot
+    bin_size
+        size of bins for plotting (µm)
+    rotation_angle
+        horary rotation angle of the shape before computing along x axis
+    save
+        wether or not to save the figure
 
     """
     if group_lst is None:
         group_lst = sdata.table.obs[label_obs_key].unique().tolist()
 
-    # extract polygon to work with
+    # extract polygon to work with (should have been done before using tl.get_sdata_polygon)
     # poly = sdata[sdata_shape_key][sdata[sdata_shape_key][poly_name_key] == poly_name].geometry.item()
     # sdata2 = sd.polygon_query(
     #    sdata,
@@ -82,8 +86,9 @@ def plot_shape_along_axis(
     sdata3 = sdata.transform_to_coordinate_system(target_coordinates)
 
     # get elements key, probably need to do better here in the futur !!
-    sdata_transcript_key = sdata3.table.obs.dataset_id.unique().tolist()[0] + "_transcripts"
-    sdata_polygon_key = sdata3.table.obs.dataset_id.unique().tolist()[0] + "_polygons"
+    dataset_id = sdata3.table.obs.dataset_id.unique().tolist()[0]
+    sdata_transcript_key = dataset_id + "_transcripts"
+    sdata_polygon_key = dataset_id + "_polygons"
 
     # compute dataframes
     df_transcripts = sdata3[sdata_transcript_key].compute()
@@ -154,7 +159,7 @@ def plot_shape_along_axis(
         )
 
     ax3.legend(bbox_to_anchor=(1, 1.1))
-    ax1.set_title(poly_name + " shape (" + sdata.table.obs.slide.unique().tolist()[0] + ")")
+    ax1.set_title(dataset_id)
     ax2.set_title("Number of cells per cell types (" + str(int(bin_size)) + " µm bins)")
     ax3.set_title("Gene expression (" + str(int(bin_size)) + " µm bins)")
 
@@ -162,21 +167,21 @@ def plot_shape_along_axis(
 
     # save figure
     if save is True:
-        print("saving " + poly_name + ".pdf")
-        plt.savefig(poly_name + ".pdf", format="pdf", bbox_inches="tight")
+        print("saving " + dataset_id + ".pdf")
+        plt.savefig(dataset_id + ".pdf", format="pdf", bbox_inches="tight")
 
 
 def get_palette(color_key: str) -> dict:
-    """Scispy palette definition for a specific PAH project.
+    """Palette definition for specific projects.
 
     Parameters
     ----------
     color_key
-        color key from Anndata.obs (might be 'group', 'population' or 'celltype').
+        color key (might be 'group', 'population' or 'celltype').
 
     Returns
     -------
-    Return the Anndata object of the crop region.
+    Return palette dictionary.
     """
     if color_key == "group":
         palette = {"CTRL": "#006E82", "PAH": "#AA0A3C"}
@@ -258,46 +263,42 @@ def get_palette(color_key: str) -> dict:
     return palette
 
 
-def view_qc(adata: an.AnnData, library_id: str) -> int:
-    """Scinsit quality control plot.
+def plot_qc(sdata: sd.SpatialData):
+    """Plot quality control analysis.
 
     Parameters
     ----------
-    adata
-        Anndata object.
-    library_id
-        library id.
+    sdata
+        SpatialData object.
 
-    Returns
-    -------
-    Return the Anndata object of the crop region.
     """
+    dataset_id = sdata.table.obs.dataset_id.unique().tolist()[0]
+
     fig, ax = plt.subplots(figsize=(6, 5))
     plt.subplot(2, 2, 1)
     bins = np.logspace(0, 4, 100)
-    plt.hist(adata.obs["volume"], alpha=0.2, bins=bins, label=library_id, color="red")
+    plt.hist(sdata.table.obs["volume"], alpha=0.2, bins=bins, label=dataset_id, color="red")
     plt.xlabel("Volume")
     plt.ylabel("Cell count")
     plt.xscale("log")
     # Transcript count by cell
     plt.subplot(2, 2, 2)
     bins = np.logspace(0, 4, 100)
-    plt.hist(adata.obs["barcodeCount"], alpha=0.2, bins=bins, label=library_id, color="red")
+    plt.hist(sdata.table.obs["transcript_count"], alpha=0.2, bins=bins, label=dataset_id, color="red")
     plt.xlabel("Transcript count")
     plt.ylabel("Cell count")
     plt.xscale("log")
     plt.yscale("log")
     plt.subplot(2, 2, 3)
-    barcodeCount = adata.obs["barcodeCount"]
-    sns.distplot(barcodeCount, label=library_id, color="red")
+    barcodeCount = sdata.table.obs["transcript_count"]
+    sns.distplot(barcodeCount, label=dataset_id, color="red")
     ax1 = plt.subplot(2, 2, 4)
-    sc.pl.violin(adata, keys="barcodeCount", ax=ax1)
+    sc.pl.violin(sdata.table.obs, keys="transcript_count", ax=ax1)
+    plt.tight_layout()
 
-    return 0
 
-
-def cluster_small_multiples(adata, clust_key, size=60, frameon=False, legend_loc=None, **kwargs):
-    """cluster_small_multiples
+def plot_per_groups(adata, clust_key, size=60, frameon=False, legend_loc=None, **kwargs):
+    """Plot UMAP splitted by clust_key
 
     Parameters
     ----------
@@ -306,9 +307,6 @@ def cluster_small_multiples(adata, clust_key, size=60, frameon=False, legend_loc
     clust_key
         key to plot
 
-    Returns
-    -------
-    Return the Anndata object of the crop region.
     """
     tmp = adata.copy()
 

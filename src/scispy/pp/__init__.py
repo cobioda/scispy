@@ -1,6 +1,6 @@
-from .basic import filter_and_run_scanpy_sdata, scvi_annotate
+from .basic import run_scanpy, scvi_annotate
 
 __all__ = [
-    "filter_and_run_scanpy_sdata",
+    "run_scanpy",
     "scvi_annotate",
 ]
