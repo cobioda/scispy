@@ -1,4 +1,4 @@
-# scispy
+# Single-Cell In-Situ python package
 
 [![Tests][badge-tests]][link-tests]
 [![Documentation][badge-docs]][link-docs]
@@ -7,7 +7,9 @@
 [link-tests]: https://github.com/bfxomics/scispy/actions/workflows/test.yml
 [badge-docs]: https://img.shields.io/readthedocs/scispy
 
-single-cell in-situ python package
+scispy is a pyhton package for in-situ spatial-omics datasets analysis, mainly developped for vizgen merscope,
+scispy is build on top of spatialdata and spatialdata-io and spatialdata-plot librairies which can handle for
+Nanostring (cosmx) and 10xGenomics (Xenium) experiments.
 
 ## Getting started
 
@@ -17,10 +19,7 @@ Please refer to the [documentation][link-docs]. In particular, the
 
 ## Installation
 
-You need to have Python 3.9 or newer installed on your system. If you don't have
-Python installed, we recommend installing [Mambaforge](https://github.com/conda-forge/miniforge#mambaforge).
-
-There are several alternative options to install scispy:
+You need to have Python 3.9 or newer installed on your system.
 
 <!--
 1) Install the latest release of `scispy` from `PyPI <https://pypi.org/project/scispy/>`_:
@@ -30,10 +29,10 @@ pip install scispy
 ```
 -->
 
-1. Install the latest development version:
+Install the latest development version:
 
 ```bash
-pip install git+https://github.com/bfxomics/scispy.git@main
+pip install git+https://github.com/cobioda/scispy.git@main
 ```
 
 ## Release notes
@@ -42,15 +41,14 @@ See the [changelog][changelog].
 
 ## Contact
 
-For questions and help requests, you can reach out in the [scverse discourse][scverse-discourse].
+For questions and help requests, you can reach out the main developer of this package: in the [kevin lebrigand](mailto:lebrigand@ipmc.cnrs.fr).
 If you found a bug, please use the [issue tracker][issue-tracker].
 
 ## Citation
 
-> t.b.a
+> preprint available soon
 
-[scverse-discourse]: https://discourse.scverse.org/
-[issue-tracker]: https://github.com/bfxomics/scispy/issues
-[changelog]: https://scispy.readthedocs.io/latest/changelog.html
+[issue-tracker]: https://github.com/cobioda/scispy/issues
+[changelog]: https://scispy.readthedocs.io/en/latest/changelog.html
 [link-docs]: https://scispy.readthedocs.io
-[link-api]: https://scispy.readthedocs.io/latest/api.html
+[link-api]: https://scispy.readthedocs.io/en/latest/api.html

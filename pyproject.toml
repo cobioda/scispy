@@ -16,8 +16,8 @@ maintainers = [
     {name = "kevin lebrigand", email = "lebrigandk@gmail.com"},
 ]
 urls.Documentation = "https://scispy.readthedocs.io/"
-urls.Source = "https://github.com/bfxomics/scispy"
-urls.Home-page = "https://github.com/bfxomics/scispy"
+urls.Source = "https://github.com/cobioda/scispy"
+urls.Home-page = "https://github.com/cobioda/scispy"
 dependencies = [
     "scvi-tools",
     "pydeseq2",
