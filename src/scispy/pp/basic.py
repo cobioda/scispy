@@ -65,6 +65,7 @@ def scvi_annotate(
     label_key: str = "celltype",
     layer: str = "counts",
     metaref2add: str = None,
+    filter_under_score: float = 0.5,
 ):
     """Annotate anndata spatial cells using anndata cells reference using SCVI.
 
@@ -82,6 +83,8 @@ def scvi_annotate(
         layer in which we can find the raw count values.
     metaref2add
         .obs key in single-cell reference object to transfert to spatial.
+    filter_under_score
+        remove cells having a scvi assignment score under this cutoff
 
     """
     ad_spatial.var.index = ad_spatial.var.index.str.upper()
@@ -147,3 +150,9 @@ def scvi_annotate(
         d = pd.Series(ad_ref.obs[f"{metaref2add}"].values, index=ad_ref.obs[f"{label_ref}"]).to_dict()
         ad_spatial.obs[f"{metaref2add}"] = ad_spatial.obs[f"{label_key}"].map(d)
         ad_spatial.obs[f"{metaref2add}"] = ad_spatial.obs[f"{metaref2add}"].astype("category")
+
+    # remove cells having a bad score
+    nb_cells = ad_spatial.shape[0]
+    ad_spatial = ad_spatial[ad_spatial.obs[f"{label_key}_score"] >= filter_under_score]
+    filtered_cells = nb_cells - ad_spatial.shape[0]
+    print("low assignment score filtering ", filtered_cells)

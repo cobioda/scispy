@@ -54,6 +54,7 @@
 .. autosummary::
     :toctree: generated
 
+    pl.plot_shapes
     pl.plot_shape_along_axis
     pl.plot_qc
     pl.plot_per_groups

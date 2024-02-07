@@ -1,3 +1,5 @@
+import math
+
 import dask.dataframe as dd
 import decoupler as dc
 import geopandas as gpd
@@ -11,7 +13,7 @@ from pydeseq2.ds import DeseqStats
 from shapely import affinity
 from shapely.geometry import Polygon
 from spatialdata.models import PointsModel, ShapesModel
-from spatialdata.transformations import Identity
+from spatialdata.transformations import Affine, Identity, Translation, set_transformation
 
 
 def add_to_shapes(
@@ -76,7 +78,7 @@ def add_to_shapes(
 
 def add_to_points(
     sdata: sd.SpatialData,
-    label_key: str = "cell_type",
+    label_key: str = "celltype",
     x_key: str = "center_x",
     y_key: str = "center_y",
     element_key: str = "celltypes",
@@ -107,6 +109,7 @@ def add_to_points(
     # gdf = sdata['PGW9-2-2A_region_0_polygons'].centroid
 
     df = pd.DataFrame(sdata.table.obs[[label_key, x_key, y_key]])
+    df = df.rename(columns={label_key: "ct"})
     ddf = dd.from_pandas(df, npartitions=1)
     points = PointsModel.parse(
         ddf,
@@ -121,7 +124,7 @@ def get_sdata_polygon(
     shape_key: str = "myshapes",
     polygon_name_key: str = "name",
     polygon_name: str = None,
-    color_key: str = "cell_type",
+    color_key: str = "celltype",
     target_coordinates: str = "microns",
     figsize: tuple = (8, 2),
 ) -> sd.SpatialData:
@@ -138,7 +141,7 @@ def get_sdata_polygon(
     polygon_name
         polygon name
     color_key
-        color key for UMAP plot in sdata.table.obs, require to sync the color_key + "_colors" in color_key sdata.table.uns
+        color key for UMAP plot, needed to sync sdata.table.uns[color_key + "_colors"]
     target_coordinates
         target_coordinates system of sdata object
     figsize
@@ -172,18 +175,18 @@ def get_sdata_polygon(
 def prep_pseudobulk(
     sdata: sd.SpatialData,
     shape_key: str = "myshapes",
-    myname_key: str = "ps_name",
-    mytype_key: str = "ps_type",
+    myname_key: str = "pseudoname",
+    mytype_key: str = "pseudotype",
     target_coordinates: str = "microns",
 ):
-    """Prepare sdata.table.obs elements for tl.run_pseudobulk()
+    """Prepare sdata.table.obs for tl.run_pseudobulk()
 
     Parameters
     ----------
     sdata
         SpatialData object.
     shape_key
-        sdata shape element key where to find the polygon defining the zones having "name" = "type_replicate"
+        sdata shape element key where to find the polygon defining the zones with "name" = "type_replicate"
     myname_key
         key of group
     mytype_key
@@ -191,7 +194,7 @@ def prep_pseudobulk(
     myreplicate_key
         key of replicate
     target_coordinates
-        target_coordinates system of sdata object
+        target_coordinates system
 
     """
     sdata[shape_key][["type", "replicate"]] = sdata[shape_key]["name"].str.split("_", expand=True)
@@ -222,11 +225,11 @@ def prep_pseudobulk(
 
 def run_pseudobulk(
     sdata: sd.SpatialData,
-    ps_type_1: str,
-    ps_type_2: str,
-    ps_type_key: str = "ps_type",
-    ps_name_key: str = "ps_name",
-    groups_key: str = "cell_type",
+    pseudotype_1: str,
+    pseudotype_2: str,
+    pseudotype_key: str = "pseudotype",
+    pseudoname_key: str = "pseudoname",
+    groups_key: str = "celltype_spatial",
     groups: tuple = [],
     layer: str = "counts",
     min_cells: int = 5,
@@ -235,7 +238,7 @@ def run_pseudobulk(
     lFCs_thr: int = 0.5,
     save: bool = False,
     save_prefix: str = "decoupler",
-    figsize: tuple = (8, 2),
+    figsize: tuple = (10, 4),
 ) -> pd.DataFrame:
     """Decoupler pydeseq2 pseudobulk handler.
 
@@ -243,24 +246,24 @@ def run_pseudobulk(
     ----------
     sdata
         SpatialData object.
-    ps_type_1
-        pseudobulk condition (ps_type) 1
-    ps_type_2
-        pseudobulk condition (ps_type) 2
-    ps_type_key
-        sdata.table.obs key where to find condition
-    ps_name_key
-        sdata.table.obs key where to find replicate name (zones)
+    pseudotype_1
+        pseudobulk condition (pseudotype) 1
+    pseudotype_2
+        pseudobulk condition (pseudotype) 2
+    pseudotype_key
+        sdata.table.obs key, i.e. condition
+    pseudoname_key
+        sdata.table.obs key, i.e. replicate name
     groups_key
-        sdata.table.obs key where to find cell types
+        sdata.table.obs key, i.e. cell types
     groups
         specify the cell types to work with
     layer
         sdata.table count values layer
     min_cells
-        minimum number of cells in replicate to keep it
+        minimum cell number to keep replicate
     min_counts
-        minimum number of total counts in replicate to keep it
+        minimum total count to keep replicate
     sign_thr
         significant value threshold
     lFCs_thr
@@ -279,18 +282,18 @@ def run_pseudobulk(
     # https://decoupler-py.readthedocs.io/en/latest/notebooks/pseudobulk.html
     # sns.set(font_scale=0.5)
 
-    adata = sdata.table[sdata.table.obs[ps_type_key].isin([ps_type_1, ps_type_2])].copy()
+    adata = sdata.table[sdata.table.obs[pseudotype_key].isin([pseudotype_1, pseudotype_2])].copy()
 
     pdata = dc.get_pseudobulk(
         adata,
-        sample_col=ps_name_key,  # "ps_name"
+        sample_col=pseudoname_key,  # "pseudoname"
         groups_col=groups_key,  # celltype
         layer=layer,
         mode="sum",
         min_cells=min_cells,
         min_counts=min_counts,
     )
-    dc.plot_psbulk_samples(pdata, groupby=[ps_name_key, groups_key], figsize=figsize)
+    # dc.plot_psbulk_samples(pdata, groupby=[pseudoname_key, groups_key], figsize=figsize)
 
     if groups is None:
         groups = adata.obs[groups_key].cat.categories.tolist()
@@ -299,26 +302,26 @@ def run_pseudobulk(
     for ct in groups:
         sub = pdata[pdata.obs[groups_key] == ct].copy()
 
-        if len(sub.obs[ps_type_key].to_list()) > 1:
+        if len(sub.obs[pseudotype_key].to_list()) > 1:
             # Obtain genes that pass the thresholds
-            genes = dc.filter_by_expr(sub, group=ps_type_key, min_count=5, min_total_count=5)
+            genes = dc.filter_by_expr(sub, group=pseudotype_key, min_count=5, min_total_count=5)
             # Filter by these genes
             sub = sub[:, genes].copy()
 
-            if len(sub.obs[ps_type_key].unique().tolist()) > 1:
+            if len(sub.obs[pseudotype_key].unique().tolist()) > 1:
                 # Build DESeq2 object
                 dds = DeseqDataSet(
                     adata=sub,
-                    design_factors=ps_type_key,
-                    ref_level=[ps_type_key, ps_type_1],
+                    design_factors=pseudotype_key,
+                    ref_level=[pseudotype_key, pseudotype_1],
                     refit_cooks=True,
                     quiet=True,
                 )
                 dds.deseq2()
-                stat_res = DeseqStats(dds, contrast=[ps_type_key, ps_type_1, ps_type_2], quiet=True)
+                stat_res = DeseqStats(dds, contrast=[pseudotype_key, pseudotype_1, pseudotype_2], quiet=True)
 
                 stat_res.summary()
-                coeff_str = ps_type_key + "_" + ps_type_2 + "_vs_" + ps_type_1
+                coeff_str = pseudotype_key + "_" + pseudotype_2 + "_vs_" + pseudotype_1
                 stat_res.lfc_shrink(coeff=coeff_str)
 
                 results_df = stat_res.results_df
@@ -344,7 +347,7 @@ def run_pseudobulk(
                     sc.pp.normalize_total(sub)
                     sc.pp.log1p(sub)
                     sc.pp.scale(sub, max_value=10)
-                    sc.pl.matrixplot(sub, signs.index, groupby=ps_name_key, ax=axs[1])
+                    sc.pl.matrixplot(sub, signs.index, groupby=pseudoname_key, ax=axs[1])
 
                 plt.tight_layout()
 
@@ -361,3 +364,132 @@ def run_pseudobulk(
     # plt.show()
 
     return df_total
+
+
+def sdata_rotate(
+    sdata: sd.SpatialData,
+    rotation_angle: int = 0,
+    target_coordinates: str = "microns",
+) -> sd.SpatialData:
+    """Rotate sdata object
+
+    Parameters
+    ----------
+    sdata
+        SpatialData object.
+    rotation_angle
+        horary rotation angle
+    target_coordinates
+        target_coordinates system of sdata object
+
+    Returns
+    -------
+    SpatialData object
+    """
+    # 360∘ = 2π  rad
+    # 180∘ = π   rad
+    #  90∘ = π/2 rad
+    #  60∘ = π/3 rad
+    #  30∘ = π/6 rad
+
+    # rotate the shape along x axis
+    if rotation_angle != 0:
+        theta = math.pi / (180 / rotation_angle)
+        # perform rotation of shape
+        rotation = Affine(
+            [
+                [math.cos(theta), -math.sin(theta), 0],
+                [math.sin(theta), math.cos(theta), 0],
+                [0, 0, 1],
+            ],
+            input_axes=("x", "y"),
+            output_axes=("x", "y"),
+        )
+        # translation = Translation([0, 0], axes=("x", "y"))
+        # sequence = Sequence([rotation, translation])
+
+        # for element in sdata._gen_elements_values():
+        #    set_transformation(element, rotation, set_all=True)
+
+        elements = list(sdata.images.keys()) + list(sdata.points.keys()) + list(sdata.shapes.keys())
+        for i in range(0, len(elements)):
+            set_transformation(sdata[elements[i]], rotation, to_coordinate_system=target_coordinates)
+
+    # convert to final coordinates
+    sdata_out = sdata.transform_to_coordinate_system(target_coordinates)
+
+    # if 'celltypes' in list(sdata.points.keys()):
+    #    sdata_out.pl.render_points(elements='celltypes', color='celltype').pl.show(figsize=(10,4))
+
+    return sdata_out
+
+
+def sdata_querybox(
+    sdata: sd.SpatialData,
+    xmin: int = 0,
+    xmax: int = 0,
+    ymin: int = 0,
+    ymax: int = 0,
+    set_origin: bool = True,
+    x_origin: int = 0,
+    y_origin: int = 0,
+    target_coordinates: str = "microns",
+) -> sd.SpatialData:
+    """Subset an sdata object to the coordinates box received, then set origin to (x_origin,y_origin)
+
+    Parameters
+    ----------
+    sdata
+        SpatialData object.
+    xmin
+        xmin
+    xmax
+        xmax
+    ymin
+        ymin
+    ymax
+        ymax
+    set_origin
+        wether or not translate coordinate to origin (x_origin,y_origin)
+    target_coordinates
+        target_coordinates
+
+    Returns
+    -------
+    SpatialData object
+    """
+    sdata_crop = sdata.query.bounding_box(
+        axes=["x", "y"],
+        min_coordinate=[xmin, ymin],
+        max_coordinate=[xmax, ymax],
+        target_coordinate_system=target_coordinates,
+        filter_table=True,
+    )
+
+    if set_origin is True:
+        sdata_crop.table.obs.center_x = sdata_crop[sdata_crop.table.uns["spatialdata_attrs"]["region"][0]].centroid.x
+        sdata_crop.table.obs.center_y = sdata_crop[sdata_crop.table.uns["spatialdata_attrs"]["region"][0]].centroid.y
+        sdata_crop.table.obsm["spatial"] = sdata_crop.table.obs[["center_x", "center_y"]].to_numpy()
+
+        translation = Translation(
+            [-sdata_crop.table.obs.center_x.min() + x_origin, -sdata_crop.table.obs.center_y.min() + y_origin],
+            axes=("x", "y"),
+        )
+        elements = list(sdata_crop.images.keys()) + list(sdata_crop.points.keys()) + list(sdata_crop.shapes.keys())
+        for i in range(0, len(elements)):
+            set_transformation(sdata_crop[elements[i]], translation, to_coordinate_system=target_coordinates)
+
+        # convert to final coordinates
+        sdata_out = sdata_crop.transform_to_coordinate_system(target_coordinates)
+
+        sdata_out.table.obs.center_x = sdata_out[sdata_out.table.uns["spatialdata_attrs"]["region"][0]].centroid.x
+        sdata_out.table.obs.center_y = sdata_out[sdata_out.table.uns["spatialdata_attrs"]["region"][0]].centroid.y
+        sdata_out.table.obsm["spatial"] = sdata_out.table.obs[["center_x", "center_y"]].to_numpy()
+
+        # cropped_sdata.table.obs.celltype = cropped_sdata.table.obs.celltype.cat.remove_unused_categories()
+        # cropped_sdata.points['celltypes'].celltype = cropped_sdata.points['celltypes'].celltype.cat.remove_unused_categories()
+        # del cropped_sdata.table.uns['celltype_colors']
+        return sdata_out
+
+    else:
+        return sdata_crop
