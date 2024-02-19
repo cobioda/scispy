@@ -54,8 +54,12 @@ def run_scanpy(sdata: sd.SpatialData, min_counts: int = 20, resolution: float = 
     plt.tight_layout()
 
     # works with spatialdata-0.0.15, then write_shapes error
-    key = sdata.table.obs.cells_region.unique().tolist()[0]
-    sdata.add_shapes(key, sdata[key].loc[sdata.table.obs.index.tolist()], overwrite=True)
+    if sdata.contains_element(sdata.table.uns["spatialdata_attrs"]["region"]):
+        sdata.add_shapes(
+            sdata.table.uns["spatialdata_attrs"]["region"],
+            sdata[sdata.table.uns["spatialdata_attrs"]["region"]].loc[sdata.table.obs.index.tolist()],
+            overwrite=True,
+        )
 
 
 def scvi_annotate(
@@ -64,7 +68,7 @@ def scvi_annotate(
     label_ref: str = "celltype",
     label_key: str = "celltype",
     layer: str = "counts",
-    metaref2add: str = None,
+    metaref2add: tuple = [],
     filter_under_score: float = 0.5,
 ):
     """Annotate anndata spatial cells using anndata cells reference using SCVI.
@@ -146,10 +150,10 @@ def scvi_annotate(
 
     ad_spatial.obs[f"{label_key}"] = ad_spatial.obs[f"{label_key}"].astype("category")
 
-    if metaref2add:
-        d = pd.Series(ad_ref.obs[f"{metaref2add}"].values, index=ad_ref.obs[f"{label_ref}"]).to_dict()
-        ad_spatial.obs[f"{metaref2add}"] = ad_spatial.obs[f"{label_key}"].map(d)
-        ad_spatial.obs[f"{metaref2add}"] = ad_spatial.obs[f"{metaref2add}"].astype("category")
+    for i in range(0, len(metaref2add)):
+        d = pd.Series(ad_ref.obs[f"{metaref2add[i]}"].values, index=ad_ref.obs[f"{label_ref}"]).to_dict()
+        ad_spatial.obs[f"{metaref2add[i]}"] = ad_spatial.obs[f"{label_key}"].map(d)
+        ad_spatial.obs[f"{metaref2add[i]}"] = ad_spatial.obs[f"{metaref2add[i]}"].astype("category")
 
     # remove cells having a bad score
     nb_cells = ad_spatial.shape[0]

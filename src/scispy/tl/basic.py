@@ -3,6 +3,7 @@ import math
 import dask.dataframe as dd
 import decoupler as dc
 import geopandas as gpd
+import h5py
 import numpy as np
 import pandas as pd
 import scanpy as sc
@@ -14,6 +15,46 @@ from shapely import affinity
 from shapely.geometry import Polygon
 from spatialdata.models import PointsModel, ShapesModel
 from spatialdata.transformations import Affine, Identity, Translation, set_transformation
+
+
+def add_shapes_from_hdf5(
+    sdata: sd.SpatialData = None,
+    path: str = None,
+    target_coordinates: str = "microns",
+):
+    """Add shapes from cell boundaries hdf5 files to spatialdata object.
+
+    Parameters
+    ----------
+    sdata
+        SpatialData object.
+    path
+        path to vizgen results files containing a cell_boundaries folder.
+    target_coordinates
+        target coordinates system.
+
+    """
+    sdata.table.obs["geometry"] = np.array(sdata.table.obs.shape[0], dtype=object)
+    z_indexes = ["0", "1", "2", "3", "4", "5", "6"]
+
+    for fov in pd.unique(sdata.table.obs["fov"]):
+        # try:
+        with h5py.File(f"{path}/cell_boundaries/feature_data_{fov}.hdf5", "r") as f:
+            print(fov)
+            for cell_id in sdata.table.obs.index[sdata.table.obs["fov"] == fov]:
+                # print(cell_id)
+                for z in z_indexes:
+                    node = f"featuredata/{cell_id}/zIndex_{z}/p_0/coordinates"
+
+                    if node in f.keys():
+                        temp = f[node][0]
+                        polygon = Polygon(temp)
+                        sdata.table.obs["geometry"][cell_id] = polygon
+
+    geo_df = gpd.GeoDataFrame(sdata.table.obs.geometry)
+    sdata.table.obs = sdata.table.obs.drop("geometry", axis=1)
+    key = sdata.table.uns["spatialdata_attrs"]["region"]
+    sdata.add_shapes(key, ShapesModel.parse(geo_df, transformations={target_coordinates: Identity()}))
 
 
 def add_to_shapes(
@@ -369,8 +410,11 @@ def run_pseudobulk(
 def sdata_rotate(
     sdata: sd.SpatialData,
     rotation_angle: int = 0,
+    obs_x: str = "center_x",
+    obs_y: str = "center_y",
+    obsm_key: str = "spatial",
     target_coordinates: str = "microns",
-) -> sd.SpatialData:
+):
     """Rotate sdata object
 
     Parameters
@@ -382,9 +426,6 @@ def sdata_rotate(
     target_coordinates
         target_coordinates system of sdata object
 
-    Returns
-    -------
-    SpatialData object
     """
     # 360∘ = 2π  rad
     # 180∘ = π   rad
@@ -415,13 +456,29 @@ def sdata_rotate(
         for i in range(0, len(elements)):
             set_transformation(sdata[elements[i]], rotation, to_coordinate_system=target_coordinates)
 
+        # synchronization for obs and squidpy coordinates
+        A = np.vstack((sdata.table.obs[obs_x], sdata.table.obs[obs_y]))
+
+        theta = np.pi / (180 / rotation_angle)
+        rotate = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
+
+        # Translation vector is the mean of all xs and ys.
+        translate = A.mean(axis=1, keepdims=True)
+
+        out = A - translate  # Step 1
+        out = rotate @ out  # Step 2
+        out = out + translate  # Step 3
+
+        sdata.table.obs[obs_x] = out[0]
+        sdata.table.obs[obs_y] = out[1]
+        spatial = sdata.table.obs[[obs_x, obs_y]].to_numpy()
+        sdata.table.obsm[obsm_key] = spatial
+
     # convert to final coordinates
-    sdata_out = sdata.transform_to_coordinate_system(target_coordinates)
+    # sdata_out = sdata.transform_to_coordinate_system(target_coordinates)
 
     # if 'celltypes' in list(sdata.points.keys()):
     #    sdata_out.pl.render_points(elements='celltypes', color='celltype').pl.show(figsize=(10,4))
-
-    return sdata_out
 
 
 def sdata_querybox(

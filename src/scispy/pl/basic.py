@@ -230,7 +230,10 @@ def plot_sdata(
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
     sc.pl.embedding(sdata.table, "umap", color=color_key, ax=ax1, show=False)
     ax1.get_legend().remove()
-    sdata.pl.render_shapes(elements=sdata.table.uns["spatialdata_attrs"]["region"], color=color_key).pl.show(ax=ax2)
+    if sdata.contains_element(sdata.table.uns["spatialdata_attrs"]["region"]):
+        sdata.pl.render_shapes(elements=sdata.table.uns["spatialdata_attrs"]["region"], color=color_key).pl.show(ax=ax2)
+    else:
+        sq.pl.spatial_scatter(sdata.table, color=color_key, shape=None, size=1, ax=ax2)
     plt.tight_layout()
 
 

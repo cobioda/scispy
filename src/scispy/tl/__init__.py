@@ -1,4 +1,5 @@
 from .basic import (
+    add_shapes_from_hdf5,
     add_to_points,
     add_to_shapes,
     get_sdata_polygon,
@@ -9,6 +10,7 @@ from .basic import (
 )
 
 __all__ = [
+    "add_shapes_from_hdf5",
     "add_to_points",
     "add_to_shapes",
     "get_sdata_polygon",

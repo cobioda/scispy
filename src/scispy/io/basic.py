@@ -2,7 +2,13 @@ import spatialdata as sd
 import spatialdata_io
 
 
-def load_merscope(path: str, vpt_outputs: str, region_name: str, slide_name: str, z_layers: int = 2) -> sd.SpatialData:
+def load_merscope(
+    path: str,
+    slide_name: str,
+    vpt_outputs: str = None,
+    region_name: str = "region_0",
+    z_layers: int = 2,
+) -> sd.SpatialData:
     """Load vizgen merscope data as SpatialData object
 
     Parameters
@@ -25,9 +31,9 @@ def load_merscope(path: str, vpt_outputs: str, region_name: str, slide_name: str
     sdata = spatialdata_io.merscope(
         path=path, vpt_outputs=vpt_outputs, region_name=region_name, slide_name=slide_name, z_layers=z_layers
     )
-    key = slide_name + "_" + region_name
     sdata.table.obs_names.name = None
-    sdata[key + "_polygons"].index.name = None
+    if sdata.contains_element(sdata.table.uns["spatialdata_attrs"]["region"]):
+        sdata[sdata.table.uns["spatialdata_attrs"]["region"]].index.name = None
 
     # Transform coordinates to mosaic pixel coordinates
     # transformation_matrix = pd.read_csv(
