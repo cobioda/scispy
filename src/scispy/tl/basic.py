@@ -1,5 +1,6 @@
 import math
 
+import anndata as an
 import dask.dataframe as dd
 import decoupler as dc
 import geopandas as gpd
@@ -7,6 +8,7 @@ import h5py
 import numpy as np
 import pandas as pd
 import scanpy as sc
+import seaborn as sns
 import spatialdata as sd
 from matplotlib import pyplot as plt
 from pydeseq2.dds import DeseqDataSet
@@ -265,12 +267,12 @@ def prep_pseudobulk(
 
 
 def run_pseudobulk(
-    sdata: sd.SpatialData,
+    adata: an.AnnData,
     pseudotype_1: str,
     pseudotype_2: str,
     pseudotype_key: str = "pseudotype",
     pseudoname_key: str = "pseudoname",
-    groups_key: str = "celltype_spatial",
+    groups_key: str = "celltype",
     groups: tuple = [],
     layer: str = "counts",
     min_cells: int = 5,
@@ -285,8 +287,8 @@ def run_pseudobulk(
 
     Parameters
     ----------
-    sdata
-        SpatialData object.
+    adata
+        AnnData object.
     pseudotype_1
         pseudobulk condition (pseudotype) 1
     pseudotype_2
@@ -323,7 +325,7 @@ def run_pseudobulk(
     # https://decoupler-py.readthedocs.io/en/latest/notebooks/pseudobulk.html
     # sns.set(font_scale=0.5)
 
-    adata = sdata.table[sdata.table.obs[pseudotype_key].isin([pseudotype_1, pseudotype_2])].copy()
+    adata = adata[adata.obs[pseudotype_key].isin([pseudotype_1, pseudotype_2])].copy()
 
     pdata = dc.get_pseudobulk(
         adata,
@@ -396,13 +398,16 @@ def run_pseudobulk(
                     results_df.to_csv(save_prefix + "_" + ct + ".csv")
                     fig.savefig(save_prefix + "_" + ct + ".pdf", bbox_inches="tight")
 
-    # pivlfc = pd.pivot_table(df_total, values=["log2FoldChange"], index=["index"], columns=[groups_col], fill_value=0)
-    # pd.pivot_table(df_total, values=["pvals"], index=["index"], columns=[groups_col], fill_value=0)
-    ## plot pivot table as heatmap using seaborn
-    # sns.clustermap(pivlfc, cmap="vlag", figsize=(6, 6))
-    ## plt.setp( ax.xaxis.get_majorticklabels(), rotation=90)
-    # plt.tight_layout()
-    # plt.show()
+    if len(df_total["celltype"].unique()) > 2:
+        pivlfc = pd.pivot_table(
+            df_total, values=["log2FoldChange"], index=["index"], columns=[groups_key], fill_value=0
+        )
+        #    pd.pivot_table(df_total, values=["pvals"], index=["index"], columns=[groups_col], fill_value=0)
+        #    ## plot pivot table as heatmap using seaborn
+        sns.clustermap(pivlfc, cmap="vlag", figsize=(6, 6))
+    #    ## plt.setp( ax.xaxis.get_majorticklabels(), rotation=90)
+    #    # plt.tight_layout()
+    #    # plt.show()
 
     return df_total
 
@@ -415,7 +420,7 @@ def sdata_rotate(
     obsm_key: str = "spatial",
     target_coordinates: str = "microns",
 ):
-    """Rotate sdata object
+    """Apply a rotation to sdata object elements + [obs_x,obs_y] sdata.table.obs + sdata.table.obsm[obsm_key]
 
     Parameters
     ----------
@@ -423,6 +428,12 @@ def sdata_rotate(
         SpatialData object.
     rotation_angle
         horary rotation angle
+    obs_x
+        x coordinate in sdata.table.obs
+    obs_y
+        y coordinate in sdata.table.obs
+    obsm_key
+        key in sdata.table.obsm storing spatial coordinates for squidpy plots
     target_coordinates
         target_coordinates system of sdata object
 
@@ -480,6 +491,8 @@ def sdata_rotate(
     # if 'celltypes' in list(sdata.points.keys()):
     #    sdata_out.pl.render_points(elements='celltypes', color='celltype').pl.show(figsize=(10,4))
 
+    # return sdata_out
+
 
 def sdata_querybox(
     sdata: sd.SpatialData,
@@ -490,6 +503,8 @@ def sdata_querybox(
     set_origin: bool = True,
     x_origin: int = 0,
     y_origin: int = 0,
+    obs_x: str = "center_x",
+    obs_y: str = "center_y",
     target_coordinates: str = "microns",
 ) -> sd.SpatialData:
     """Subset an sdata object to the coordinates box received, then set origin to (x_origin,y_origin)
@@ -508,6 +523,14 @@ def sdata_querybox(
         ymax
     set_origin
         wether or not translate coordinate to origin (x_origin,y_origin)
+    x_origin
+        define new x origin
+    y_origin
+        define new y origin
+    obs_x
+        x coordinate in sdata.table.obs
+    obs_y
+        y coordinate in sdata.table.obs
     target_coordinates
         target_coordinates
 
@@ -515,7 +538,10 @@ def sdata_querybox(
     -------
     SpatialData object
     """
-    sdata_crop = sdata.query.bounding_box(
+    # convert to real coordinates
+    sdata2 = sdata.transform_to_coordinate_system(target_coordinates)
+
+    sdata_crop = sdata2.query.bounding_box(
         axes=["x", "y"],
         min_coordinate=[xmin, ymin],
         max_coordinate=[xmax, ymax],
@@ -524,12 +550,12 @@ def sdata_querybox(
     )
 
     if set_origin is True:
-        sdata_crop.table.obs.center_x = sdata_crop[sdata_crop.table.uns["spatialdata_attrs"]["region"][0]].centroid.x
-        sdata_crop.table.obs.center_y = sdata_crop[sdata_crop.table.uns["spatialdata_attrs"]["region"][0]].centroid.y
-        sdata_crop.table.obsm["spatial"] = sdata_crop.table.obs[["center_x", "center_y"]].to_numpy()
+        sdata_crop.table.obs[obs_x] = sdata_crop[sdata_crop.table.uns["spatialdata_attrs"]["region"][0]].centroid.x
+        sdata_crop.table.obs[obs_y] = sdata_crop[sdata_crop.table.uns["spatialdata_attrs"]["region"][0]].centroid.y
+        sdata_crop.table.obsm["spatial"] = sdata_crop.table.obs[[obs_x, obs_y]].to_numpy()
 
         translation = Translation(
-            [-sdata_crop.table.obs.center_x.min() + x_origin, -sdata_crop.table.obs.center_y.min() + y_origin],
+            [-sdata_crop.table.obs[obs_x].min() + x_origin, -sdata_crop.table.obs[obs_y].min() + y_origin],
             axes=("x", "y"),
         )
         elements = list(sdata_crop.images.keys()) + list(sdata_crop.points.keys()) + list(sdata_crop.shapes.keys())
@@ -539,13 +565,10 @@ def sdata_querybox(
         # convert to final coordinates
         sdata_out = sdata_crop.transform_to_coordinate_system(target_coordinates)
 
-        sdata_out.table.obs.center_x = sdata_out[sdata_out.table.uns["spatialdata_attrs"]["region"][0]].centroid.x
-        sdata_out.table.obs.center_y = sdata_out[sdata_out.table.uns["spatialdata_attrs"]["region"][0]].centroid.y
-        sdata_out.table.obsm["spatial"] = sdata_out.table.obs[["center_x", "center_y"]].to_numpy()
+        sdata_out.table.obs[obs_x] = sdata_out[sdata_out.table.uns["spatialdata_attrs"]["region"][0]].centroid.x
+        sdata_out.table.obs[obs_y] = sdata_out[sdata_out.table.uns["spatialdata_attrs"]["region"][0]].centroid.y
+        sdata_out.table.obsm["spatial"] = sdata_out.table.obs[[obs_x, obs_y]].to_numpy()
 
-        # cropped_sdata.table.obs.celltype = cropped_sdata.table.obs.celltype.cat.remove_unused_categories()
-        # cropped_sdata.points['celltypes'].celltype = cropped_sdata.points['celltypes'].celltype.cat.remove_unused_categories()
-        # del cropped_sdata.table.uns['celltype_colors']
         return sdata_out
 
     else:
