@@ -226,7 +226,19 @@ def plot_shape_along_axis(
 def plot_sdata(
     sdata: sd.SpatialData,
     color_key: str = "celltype",
-    mypal: tuple = None,
+    point_color_key: str = "gene",
+    point_size: int = 1,
+    figsize: tuple = (12, 6),
+    outline: bool = False,
+    outline_width: float = 1.0,
+    outline_color: str = "red",
+    shape_palette: tuple = None,
+    shape_groups: tuple = None,  # need shape_palette to be defined
+    cmap: tuple = None,
+    point_groups: tuple = None,  # 10 maximum
+    grid: bool = False,
+    save: bool = False,
+    save_format: str = "pdf",
 ):
     """Plot sdata object (i.e. embedding and polygons). This should always works if well synchronized sdata object
 
@@ -237,28 +249,60 @@ def plot_sdata(
     color_key
         color key from .table.obs
     """
-    fig, ax = plt.subplots(figsize=(12, 6))
-    if mypal is not None:
-        sdata.pl.render_shapes(
-            elements=sdata.table.uns["spatialdata_attrs"]["region"],
-            color="celltype",
-            palette=list(mypal.values()),
-            groups=list(mypal.keys()),
-        ).pl.show(ax=ax)
-    else:
-        sdata.pl.render_shapes(elements=sdata.table.uns["spatialdata_attrs"]["region"], color="celltype").pl.show(ax=ax)
+    # zeshapes = sdata.table.uns["spatialdata_attrs"]["region"]
+    # zepoints = zeshapes.replace("_polygons", "_transcripts")
 
-    ax.grid(which="both", linestyle="dashed")
-    ax.minorticks_on()
-    ax.tick_params(which="minor", bottom=False, left=False)
+    args_shapes = {"color": color_key}
+    args_points = {"size": point_size, "color": point_color_key}
+
+    # size=0.01, linewidth=None, marker=".", edgecolor = 'none', markeredgewidth=0.0
+
+    fig, ax = plt.subplots(figsize=figsize)
+    if shape_palette is not None:
+        args_shapes["palette"] = list(shape_palette.values())
+        args_shapes["groups"] = list(shape_palette.keys())
+        if shape_groups is not None:
+            mypal = {x: shape_palette[x] for x in shape_groups}
+            args_shapes["palette"] = list(mypal.values())
+            args_shapes["groups"] = list(mypal.keys())
+    if outline is True:
+        args_shapes["outline"] = True
+        args_shapes["outline_width"] = outline_width
+        args_shapes["outline_color"] = outline_color
+    if cmap is not None:  # case on continuous value like gene expression or .obs metadata
+        args_shapes["cmap"] = cmap
+
+    sdata.pl.render_shapes(**args_shapes).pl.show(ax=ax)
+
+    if point_groups is not None:
+        point_dict = get_palette("fluo")
+        if len(point_groups) > 10:
+            point_groups = point_groups[0:10]
+        point_pal = list(point_dict.values())[0 : len(point_groups)]
+        sdata.pl.render_points(**args_points, groups=point_groups, palette=point_pal).pl.show(ax=ax)
+
+    if grid is True:
+        ax.grid(which="both", linestyle="dashed")
+        ax.minorticks_on()
+        ax.tick_params(which="minor", bottom=False, left=False)
 
     legend_without_duplicate_labels(ax)
     plt.tight_layout()
+
+    # save figure
+    if save is True:
+        if save_format == "pdf":
+            print("saving plot_sdata.pdf")
+            plt.savefig("plot_sdata.pdf", bbox_inches="tight")
+        elif save_format == "png":
+            print("saving plot_sdata.png")
+            plt.savefig("plot_sdata.png", dpi=300, bbox_inches="tight")
 
 
 def plot_multi_sdata(
     sdata: sd.SpatialData,
     color_key: str = "celltype",
+    save: bool = False,
 ):
     """Plot sdata object (i.e. embedding and polygons). This should always works if well synchronized sdata object
 
@@ -289,6 +333,11 @@ def plot_multi_sdata(
     ax3.set_title("squidpy spatial")
 
     plt.tight_layout()
+
+    # save figure
+    if save is True:
+        print("saving plot_multi_sdata.pdf")
+        plt.savefig("plot_multi_sdata.pdf", format="pdf", bbox_inches="tight")
 
 
 def get_palette(color_key: str) -> dict:
@@ -341,6 +390,7 @@ def get_palette(color_key: str) -> dict:
             "B": "#fffbbd",
             "Megak": "#006400",
             "Pericyte": "#9c6644",
+            "Pericytes": "#9c6644",
             "SMC": "#d81159",
             "AdvFibro": "#ef6351",
             "AlvFibro": "#d58936",
@@ -349,38 +399,62 @@ def get_palette(color_key: str) -> dict:
     elif color_key == "celltype paolo":
         # paolo
         palette = {
-            "Cartilages": "#9DAF07",
-            "Stromal0": "#99D6A9",
-            "Stromal1": "#1B8F76",
-            "Stromal2": "#BBD870",
-            "Stromal3": "#4CAD4C",
-            "Lymphatic EC": "#F78896",
-            "Vascular EC": "#E788C2",
-            "Pericytes": "#0B4B19",
-            "Satellites": "#9CBBA6",
-            "Skeletal muscle": "#9EB3DD",  # 3868A6
-            "Glia progenitors": "#E3D9AC",
-            "Olfactory ensheathing glia": "#9ecae1",  # AE8C0D
-            "Schwann cells": "#FAF9BA",  # C0AC51
-            "Neurons ALK+": "#7D1C53",
-            "Respiratory HBCs": "#D50000",
+            "Early OSNs": "#5AC2BF",  # 04C9FA
+            "Sustentaculars": "#ff7f00",  # E17C10
             "Olfactory HBCs": "#1A237E",
+            "GBCs": "#706fd3",
             "Keratinocytes": "#0000FF",
             "Duct/MUC": "#BC9EDD",
             "Multiciliated": "#FAF204",
             "Deuterosomal": "#2EECDB",
-            "Sustentaculars": "#ff7f00",  # E17C10
-            "GBCs": "#706fd3",
-            "Early OSNs": "#5AC2BF",  # 04C9FA
+            "Respiratory HBCs": "#D50000",
+            "GnRH neurons": "#E00EF1",
             "Migratory neurons": "#457b9d",  ###
-            "VNO neurons": "#0D16C8",
             "Neuron progenitors": "#61559E",  # 6A0B78
             "Excitatory neurons": "#95819F",
             "Inhibitory neurons": "#800EF1",
-            "GnRH neurons": "#E00EF1",
+            "Neurons ALK+": "#7D1C53",
+            "VNO neurons": "#0D16C8",
+            "junk neurons": "#f1faee",
+            "Olfactory ensheathing glia": "#9ecae1",  # AE8C0D
+            "Glia progenitors": "#E3D9AC",
+            "Schwann cells": "#FAF9BA",  # C0AC51
             "Myeloid": "#7E909D",  # CB7647
             "Microglia": "#91BFB7",
-            "junk neurons": "#f1faee",
+            "Vascular EC": "#E788C2",
+            "Lymphatic EC": "#F78896",
+            "Satellites": "#9CBBA6",
+            "Skeletal muscle": "#9EB3DD",  # 3868A6
+            "Stromal0": "#99D6A9",
+            "Stromal1": "#1B8F76",
+            "Stromal2": "#BBD870",
+            "Stromal3": "#4CAD4C",
+            "Pericytes": "#0B4B19",
+            "Cartilages": "#9DAF07",
+        }
+    elif color_key == "population paolo":
+        palette = {
+            "Olfactory epithelium": "#EF1B4F",
+            "Respiratory epithelium": "#803800",
+            "Neurons": "#6E5489",
+            "Glia": "#919976",
+            "Immune": "#2EECDB",
+            "Endothelium": "#CC79A7",
+            "Myocytes": "#5562B7",
+            "Stroma": "#009E73",
+        }
+    elif color_key == "fluo":
+        palette = {
+            "blue": "#382aff",
+            "green": "#82ff78",
+            "purple": "#a900d7",
+            "orange": "#ffa421",
+            "darkblue": "#006b94",
+            "red": "#c70015",
+            "cyan": "#00b5b9",
+            "brown": "#954600",
+            "yellow": "#e9ffae",
+            "pink": "#ff9eda",
         }
     elif color_key == "leiden":  # default is 40 colors returned
         l = list(range(0, 39, 1))
