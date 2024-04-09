@@ -1,3 +1,4 @@
+import pandas as pd
 import spatialdata as sd
 import spatialdata_io
 
@@ -31,9 +32,13 @@ def load_merscope(
     sdata = spatialdata_io.merscope(
         path=path, vpt_outputs=vpt_outputs, region_name=region_name, slide_name=slide_name, z_layers=z_layers
     )
+
     sdata.table.obs_names.name = None
-    if sdata.contains_element(sdata.table.uns["spatialdata_attrs"]["region"]):
-        sdata[sdata.table.uns["spatialdata_attrs"]["region"]].index.name = None
+
+    # if not sdata.locate_element(sdata.table.uns["spatialdata_attrs"]["region"]) == []:
+    #    sdata[sdata.table.uns["spatialdata_attrs"]["region"]].index.name = None
+
+    sdata.table.uns["spatialdata_attrs"]["feature_key"] = "gene"
 
     # Transform coordinates to mosaic pixel coordinates
     # transformation_matrix = pd.read_csv(
@@ -59,5 +64,42 @@ def load_merscope(
     # print("% in cells=", percent_in_cell)
     # print("mean transcripts per cell=", sdata.table.obs["n_Counts"].mean())
     # print("median transcripts per cell=", sdata.table.obs["n_Counts"].median())
+
+    return sdata
+
+
+def load_xenium(
+    path: str,
+    region: str = "cell_boundaries",
+) -> sd.SpatialData:
+    """Load xenium data as SpatialData object
+
+    Parameters
+    ----------
+    path
+        path to folder.
+    region
+        default shape element for region in table.obs.
+
+    Returns
+    -------
+    SpatialData object
+    """
+    sdata = spatialdata_io.xenium(path)
+    sdata.table.layers["counts"] = sdata.table.X.copy()
+    df = pd.DataFrame(sdata.table.obsm["spatial"])
+    df.columns = ["center_x", "center_y"]
+    sdata.table.obs[["center_x", "center_y"]] = df
+
+    sdata.table.obs.region = region
+    sdata.table.uns["spatialdata_attrs"]["region"] = region
+    sdata.table.uns["spatialdata_attrs"]["feature_key"] = "feature_name"
+
+    # sdata.table.obs = sdata.table.obs.set_index(sdata.table.obs.cell_id)
+    # sdata.table.obs.index.name= None
+    # sdata.table.obs_names.name = None
+    # sdata['cell_circles'].index.name = None
+    # sdata['cell_boundaries'].index.name = None
+    # sdata['nucleus_boundaries'].index.name = None
 
     return sdata

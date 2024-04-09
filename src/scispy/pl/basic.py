@@ -226,12 +226,13 @@ def plot_shape_along_axis(
 def plot_sdata(
     sdata: sd.SpatialData,
     color_key: str = "celltype",
-    point_color_key: str = "gene",
+    feature_key: str = "gene",  # or feature_name for xenium
     point_size: int = 1,
     figsize: tuple = (12, 6),
     outline: bool = False,
     outline_width: float = 1.0,
     outline_color: str = "red",
+    shape_keys: str = None,
     shape_palette: tuple = None,
     shape_groups: tuple = None,  # need shape_palette to be defined
     cmap: tuple = None,
@@ -249,11 +250,14 @@ def plot_sdata(
     color_key
         color key from .table.obs
     """
-    # zeshapes = sdata.table.uns["spatialdata_attrs"]["region"]
-    # zepoints = zeshapes.replace("_polygons", "_transcripts")
+    if shape_keys is None:
+        shape_keys = sdata.table.uns["spatialdata_attrs"]["region"]
 
-    args_shapes = {"color": color_key}
-    args_points = {"size": point_size, "color": point_color_key}
+    if feature_key is None:
+        feature_key = sdata.table.uns["spatialdata_attrs"]["feature_key"]
+
+    args_shapes = {"elements": shape_keys, "color": color_key}
+    args_points = {"size": point_size, "color": feature_key}
 
     # size=0.01, linewidth=None, marker=".", edgecolor = 'none', markeredgewidth=0.0
 

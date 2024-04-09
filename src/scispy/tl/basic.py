@@ -258,8 +258,8 @@ def prep_pseudobulk(
             target_coordinate_system=target_coordinates,
             filter_table=True,
             points=False,
-            shapes=True,
-            images=True,
+            shapes=False,
+            images=False,
         )
         sdata.table.obs.loc[sdata2.table.obs.index.to_list(), myname_key] = myname
         sdata.table.obs.loc[sdata2.table.obs.index.to_list(), mytype_key] = mytype
