@@ -15,6 +15,7 @@ from pydeseq2.dds import DeseqDataSet
 from pydeseq2.ds import DeseqStats
 from shapely import affinity
 from shapely.geometry import Polygon
+from spatialdata import SpatialData
 from spatialdata.models import PointsModel, ShapesModel
 from spatialdata.transformations import Affine, Identity, Translation, set_transformation
 
@@ -215,7 +216,7 @@ def prep_pseudobulk(
     myname_key: str = "pseudoname",
     mytype_key: str = "pseudotype",
     target_coordinates: str = "microns",
-):
+) -> sd.SpatialData:
     """Prepare sdata.table.obs for tl.run_pseudobulk()
 
     Parameters
@@ -232,7 +233,9 @@ def prep_pseudobulk(
         key of replicate
     target_coordinates
         target_coordinates system
-
+    Returns
+    -------
+    sdata polygon object.
     """
     sdata[shape_key][["type", "replicate"]] = sdata[shape_key]["name"].str.split("_", expand=True)
 
@@ -240,24 +243,30 @@ def prep_pseudobulk(
     sdata.table.obs[mytype_key] = "#NA"
     # sdata.table.obs[myreplicate_key] = "#NA"
 
-    for i in range(0, len(sdata[shape_key])):
-        poly = sdata[shape_key].geometry[i]
-        myname = sdata[shape_key]["name"][i]
-        mytype = sdata[shape_key]["type"][i]
+    region_key = sdata.table.uns["spatialdata_attrs"]["region"]
+    my_shapes = {region_key: sdata[region_key], shape_key: sdata[shape_key]}
+    my_tables = {"table": sdata["table"]}
+    sdata2 = SpatialData(shapes=my_shapes, tables=my_tables)
+
+    for i in range(0, len(sdata2[shape_key])):
+        print(sdata2[shape_key].name[i])
+
+        poly = sdata2[shape_key].geometry[i]
+        myname = sdata2[shape_key]["name"][i]
+        mytype = sdata2[shape_key]["type"][i]
         # myreplicate = sdata[shape_key]["replicate"][i]
 
-        sdata2 = sd.polygon_query(
-            sdata,
+        sdata3 = sd.polygon_query(
+            sdata2,
             poly,
             target_coordinate_system=target_coordinates,
             filter_table=True,
-            points=False,
-            shapes=False,
-            images=False,
         )
-        sdata.table.obs.loc[sdata2.table.obs.index.to_list(), myname_key] = myname
-        sdata.table.obs.loc[sdata2.table.obs.index.to_list(), mytype_key] = mytype
+        sdata2.table.obs.loc[sdata3.table.obs.index.to_list(), myname_key] = myname
+        sdata2.table.obs.loc[sdata3.table.obs.index.to_list(), mytype_key] = mytype
         # sdata.table.obs.loc[sdata2.table.obs.index.to_list(), myreplicate_key] = myreplicate
+
+    return sdata2
 
 
 def run_pseudobulk(
@@ -392,7 +401,7 @@ def run_pseudobulk(
                     results_df.to_csv(save_prefix + "_" + ct + ".csv")
                     fig.savefig(save_prefix + "_" + ct + ".pdf", bbox_inches="tight")
 
-    if len(df_total["celltype"].unique()) > 2:
+    if len(df_total[groups_key].unique()) > 2:
         pivlfc = pd.pivot_table(
             df_total, values=["log2FoldChange"], index=["index"], columns=[groups_key], fill_value=0
         )

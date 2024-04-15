@@ -19,14 +19,15 @@ urls.Documentation = "https://scispy.readthedocs.io/"
 urls.Source = "https://github.com/cobioda/scispy"
 urls.Home-page = "https://github.com/cobioda/scispy"
 dependencies = [
-    #"scvi-tools",
-    #"pydeseq2",
-    #"decoupler",
-    #"spatialdata",
-    #"spatialdata-io",
-    #"spatialdata-plot",
+    "scvi-tools",
+    "pydeseq2",
+    "decoupler",
+    "spatialdata",
+    "spatialdata-io",
+    "spatialdata-plot",
     #"napari-spatialdata",
-    #"squidpy",
+    "squidpy",
+    "adjustText",
     #"torch==1.13.1",
 
     # for debug logging (referenced from the issue template)

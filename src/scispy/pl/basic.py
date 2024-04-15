@@ -5,19 +5,20 @@ import seaborn as sns
 import spatialdata as sd
 import squidpy as sq
 from matplotlib import pyplot as plt
+from spatialdata import SpatialData
 
 from scispy.tl.basic import sdata_rotate
 
 
 def plot_shapes(
     sdata: sd.SpatialData,
-    group_lst: tuple = [],  # the cell types to consider
-    shapes_lst: tuple = [],  # the shapes to plot
-    label_obs_key: str = "celltype_spatial",
+    group_lst: tuple = None,  # the cell types to consider
+    shapes_lst: tuple = None,  # the shapes to plot
+    color_key: str = "celltype_spatial",
     shape_key: str = "arteries",
-    color_dict: tuple = [],
     target_coordinates: str = "microns",
     figsize: tuple = (12, 6),
+    palette: tuple = None,
     save: bool = False,
 ):
     """Plot list of shapes
@@ -30,11 +31,11 @@ def plot_shapes(
         group list to consider (related to label_obs_key)
     shapes_lst
         shapes list to plot
-    label_obs_key
+    color_key
         label_key in sdata.table.obs to consider
     shape_key
         SpatialData shape element to consider
-    color_dict
+    palette
         dictionary of colors to use
     target_coordinates
         target_coordinates system of sdata object
@@ -45,35 +46,35 @@ def plot_shapes(
 
     """
     region_key = sdata.table.uns["spatialdata_attrs"]["region"]
+    my_shapes = {region_key: sdata[region_key], shape_key: sdata[shape_key]}
+    my_tables = {"table": sdata["table"]}
+    sdata2 = SpatialData(shapes=my_shapes, tables=my_tables)
 
     fig, axs = plt.subplots(ncols=len(shapes_lst), nrows=1, figsize=figsize)
     for i in range(0, len(shapes_lst)):
-        poly = sdata[shape_key][sdata[shape_key].name == shapes_lst[i]].geometry.item()
-        sdata2 = sd.polygon_query(
-            sdata,
+        poly = sdata2[shape_key][sdata2[shape_key].name == shapes_lst[i]].geometry.item()
+        sdata3 = sd.polygon_query(
+            sdata2,
             poly,
             target_coordinate_system=target_coordinates,
             filter_table=True,
-            points=False,
-            shapes=True,
-            images=True,
         )
 
-        sdata2.pl.render_images().pl.show(ax=axs[i])
+        # sdata3.pl.render_images().pl.show(ax=axs[i])
         if group_lst is None:
-            group_lst = sdata.table.obs[label_obs_key].unique().tolist()
+            group_lst = sdata2.table.obs[color_key].unique().tolist()
 
-        if color_dict is not None:
-            mypal = [color_dict[x] for x in group_lst]
-            sdata2.pl.render_shapes(elements=region_key, color=label_obs_key, groups=group_lst, palette=mypal).pl.show(
+        if palette is not None:
+            mypal = [palette[x] for x in group_lst]
+            sdata3.pl.render_shapes(elements=region_key, color=color_key, groups=group_lst, palette=mypal).pl.show(
                 ax=axs[i]
             )
         else:
-            sdata2.pl.render_shapes(elements=region_key, color=label_obs_key, groups=group_lst).pl.show(ax=axs[i])
+            sdata3.pl.render_shapes(elements=region_key, color=color_key, groups=group_lst).pl.show(ax=axs[i])
 
         axs[i].set_title(shapes_lst[i])
-        # if(i < len(shapes_lst)):
-        #    axs[i].get_legend().remove()
+        if i < len(shapes_lst) - 1:
+            axs[i].get_legend().remove()
 
     plt.tight_layout()
 
