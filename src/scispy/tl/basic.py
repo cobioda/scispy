@@ -114,17 +114,15 @@ def add_to_shapes(
     # gdf = gdf.rename(columns={"name": "myname"})
     # gdf.regionType = gdf.regionType.astype("category")
 
-    sdata.add_shapes(
-        shape_key, ShapesModel.parse(gdf, transformations={target_coordinates: Identity()}), overwrite=True
-    )
+    sdata.shapes[shape_key] = ShapesModel.parse(gdf, transformations={target_coordinates: Identity()})
 
 
 def add_to_points(
     sdata: sd.SpatialData,
+    point_key: str = "celltypes",
     label_key: str = "celltype",
     x_key: str = "center_x",
     y_key: str = "center_y",
-    element_key: str = "celltypes",
     target_coordinates: str = "microns",
 ):
     """Add anatomical shapes to sdata.
@@ -154,12 +152,10 @@ def add_to_points(
     df = pd.DataFrame(sdata.table.obs[[label_key, x_key, y_key]])
     df = df.rename(columns={label_key: "ct"})
     ddf = dd.from_pandas(df, npartitions=1)
-    points = PointsModel.parse(
-        ddf,
-        coordinates={"x": x_key, "y": y_key},
-        transformations={target_coordinates: Identity()},
+
+    sdata.points[point_key] = PointsModel.parse(
+        ddf, coordinates={"x": x_key, "y": y_key}, transformations={target_coordinates: Identity()}
     )
-    sdata.add_points(element_key, points, overwrite=True)
 
 
 def get_sdata_polygon(
@@ -206,9 +202,7 @@ def get_sdata_polygon(
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
     sdata.pl.render_images().pl.show(ax=ax1)
-    sdata_poly.pp.get_elements([shape_key]).pl.render_shapes(
-        outline=True, fill_alpha=0.25, outline_color="red"
-    ).pl.show(ax=ax1)
+    sdata_poly.pl.render_shapes(elements=shape_key, outline=True, fill_alpha=0.25, outline_color="red").pl.show(ax=ax1)
     sc.pl.embedding(sdata_poly.table, "umap", color=color_key, ax=ax2)
     plt.tight_layout()
 

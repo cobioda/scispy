@@ -82,13 +82,14 @@ def plot_shape_along_axis(
     sdata: sd.SpatialData,
     group_lst: tuple = [],  # the cell types to consider
     gene_lst: tuple = [],  # the genes to consider
-    label_obs_key: str = "celltype",
+    color_key: str = "celltype",
     sdata_group_key: str = "celltypes",
     target_coordinates: str = "microns",
-    color_dict: tuple = [],
+    palette: tuple = [],
     scale_expr: bool = False,
     bin_size: int = 50,
     rotation_angle: int = 0,
+    heatmap: bool = False,
     save: bool = False,
 ):
     """Analyse cell types occurence and gene expression along x axis of a sdata polygon shape after an evenual rotation
@@ -101,7 +102,7 @@ def plot_shape_along_axis(
         group list to consider (related to label_obs_key)
     gene_lst
         gene list to consider
-    label_obs_key
+    color_key
         label_key in sdata.table.obs to consider
     sdata_group_key
         SpatialData element where to find the group label
@@ -117,30 +118,18 @@ def plot_shape_along_axis(
         wether or not to save the figure
     """
     if group_lst is None:
-        group_lst = sdata.table.obs[label_obs_key].unique().tolist()
-
-    # extract polygon to work with (should have been done before using tl.get_sdata_polygon)
-    # poly = sdata[sdata_shape_key][sdata[sdata_shape_key][poly_name_key] == poly_name].geometry.item()
-    # sdata2 = sd.polygon_query(
-    #    sdata,
-    #    poly,
-    #    target_coordinate_system=target_coordinates,
-    #    filter_table=True,
-    #    points=True,
-    #    shapes=True,
-    #    images=True,
-    # )
+        group_lst = sdata.table.obs[color_key].unique().tolist()
 
     sdata_rotate(sdata, rotation_angle)
     sdata2 = sdata.transform_to_coordinate_system(target_coordinates)
 
-    # get elements key, probably need to do better here in the futur !!
-    dataset_id = sdata2.table.obs.dataset_id.unique().tolist()[0]
-    sdata_transcript_key = dataset_id + "_transcripts"
-    sdata_polygon_key = dataset_id + "_polygons"
+    dataset_id = sdata2.table.obs.dataset_id.unique()[0]
+    feature_key = sdata2.table.uns["spatialdata_attrs"]["feature_key"]
+    polygon_key = sdata2.table.uns["spatialdata_attrs"]["region"]
+    transcript_key = list(sdata.points.keys())[0]  # need to be in spatialdata_attrs
 
     # compute dataframes
-    df_transcripts = sdata2[sdata_transcript_key].compute()
+    df_transcripts = sdata2[transcript_key].compute()
     df_celltypes = sdata2[sdata_group_key].compute()
 
     # parametrage
@@ -149,24 +138,24 @@ def plot_shape_along_axis(
     step_number = int(total_x / bin_size)
 
     # init color palette
-    cats = sdata.table.obs[label_obs_key].cat.categories.tolist()
-    colors = list(sdata.table.uns[label_obs_key + "_colors"])
+    cats = sdata.table.obs[color_key].cat.categories.tolist()
+    colors = list(sdata.table.uns[color_key + "_colors"])
     mypal = dict(zip(cats, colors))
-    if color_dict is not None:
-        mypal = color_dict
+    if palette is not None:
+        mypal = palette
 
     mypal = {x: mypal[x] for x in group_lst}
 
     # compute values dataframes
-    vals = pd.DataFrame({"microns": [], "count": [], "gene": []})
+    vals = pd.DataFrame({"microns": [], "count": [], feature_key: []})
     for g in range(0, len(gene_lst)):
-        df2 = df_transcripts[df_transcripts.gene == gene_lst[g]]
+        df2 = df_transcripts[df_transcripts[feature_key] == gene_lst[g]]
         df2.shape[0] / step_number
         for i in range(0, step_number):
             new_row = {
                 "microns": (x_min + (i + 0.5) * bin_size),
                 "count": df2[(df2.x > (x_min + i * bin_size)) & (df2.x < (x_min + (i + 1) * bin_size))].shape[0],
-                "gene": gene_lst[g],
+                feature_key: gene_lst[g],
             }
             vals = pd.concat([vals, pd.DataFrame([new_row])], ignore_index=True)
 
@@ -181,40 +170,53 @@ def plot_shape_along_axis(
             }
             valct = pd.concat([valct, pd.DataFrame([new_row])], ignore_index=True)
 
-    # normalization
-    means_stds = vals.groupby(["gene"])["count"].agg(["mean", "std", "max"]).reset_index()
-    vals = vals.merge(means_stds, on=["gene"])
-    vals["norm_count"] = vals["count"] / vals["max"]
-
     # draw figure
     fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, sharex=True)
+
     sdata.pl.render_shapes(
-        elements=sdata_polygon_key, color=label_obs_key, palette=list(mypal.values()), groups=group_lst
+        elements=polygon_key, color=color_key, palette=list(mypal.values()), groups=group_lst
     ).pl.show(ax=ax1)
 
     sns.lineplot(data=valct, x="microns", y="count", hue="celltype", linewidth=0.9, palette=mypal, ax=ax2)
     ax2.get_legend().remove()
 
     if scale_expr is True:
-        sns.lineplot(
-            data=vals,
-            x="microns",
-            y="norm_count",
-            hue="gene",
-            linewidth=0.9,
-            palette=sns.color_palette("Paired"),
-            ax=ax3,
-        )
-    else:
-        sns.lineplot(
-            data=vals, x="microns", y="count", hue="gene", linewidth=0.9, palette=sns.color_palette("Paired"), ax=ax3
-        )
+        means_stds = vals.groupby([feature_key])["count"].agg(["mean", "std", "max"]).reset_index()
+        vals = vals.merge(means_stds, on=[feature_key])
+        vals["norm_count"] = vals["count"] / vals["max"]
 
-    ax3.legend(bbox_to_anchor=(1, 1.1))
+        if heatmap is True:
+            sns.set(font_scale=0.5)
+            sns.heatmap(vals.pivot(index="gene", columns="microns", values="norm_count"), cmap="viridis", ax=ax3)
+        else:
+            sns.lineplot(
+                data=vals,
+                x="microns",
+                y="norm_count",
+                hue=feature_key,
+                linewidth=0.9,
+                palette=sns.color_palette("Paired"),
+                ax=ax3,
+            )
+            ax3.legend(bbox_to_anchor=(1, 1.1))
+    else:
+        if heatmap is True:
+            sns.heatmap(vals.pivot(index="gene", columns="microns", values="count"), cmap="viridis", ax=ax3)
+        else:
+            sns.lineplot(
+                data=vals,
+                x="microns",
+                y="count",
+                hue=feature_key,
+                linewidth=0.9,
+                palette=sns.color_palette("Paired"),
+                ax=ax3,
+            )
+            ax3.legend(bbox_to_anchor=(1, 1.1))
+
     ax1.set_title(dataset_id)
     ax2.set_title("Number of cells per cell types (" + str(int(bin_size)) + " µm bins)")
     ax3.set_title("Gene expression (" + str(int(bin_size)) + " µm bins)")
-
     plt.tight_layout()
 
     # save figure
@@ -251,10 +253,9 @@ def plot_sdata(
         color key from .table.obs
     """
     if shape_keys is None:
-        shape_keys = sdata.table.uns["spatialdata_attrs"]["region"]
-
+        shape_keys = list(sdata.shapes.keys())  # better would be to get the list of spatialdata_attrs 'cell_regions'
     if feature_key is None:
-        feature_key = sdata.table.uns["spatialdata_attrs"]["feature_key"]
+        feature_key = sdata.tables[list(sdata.tables.keys())[0]].uns["spatialdata_attrs"]["feature_key"]
 
     args_shapes = {"elements": shape_keys, "color": color_key}
     args_points = {"size": point_size, "color": feature_key}
@@ -403,49 +404,48 @@ def get_palette(color_key: str) -> dict:
     elif color_key == "celltype paolo":
         # paolo
         palette = {
-            "Early OSNs": "#5AC2BF",  # 04C9FA
-            "Sustentaculars": "#ff7f00",  # E17C10
-            "Olfactory HBCs": "#1A237E",
-            "GBCs": "#706fd3",
-            "Keratinocytes": "#0000FF",
-            "Duct/MUC": "#BC9EDD",
-            "Multiciliated": "#FAF204",
-            "Deuterosomal": "#2EECDB",
-            "Respiratory HBCs": "#D50000",
+            "Early OSNs": "#18DED2",
+            "Sustentaculars": "#C09ACA",
+            "HBCs": "#E41A1C",
+            "GBCs": "#F48B5A",
+            "Precursors": "#706fd3",
+            "Duct/MUC": "#efe13c",
+            "Multiciliated": "#1f618d",
+            "Deuterosomal": "#3498db",
             "GnRH neurons": "#E00EF1",
-            "Migratory neurons": "#457b9d",  ###
-            "Neuron progenitors": "#61559E",  # 6A0B78
-            "Excitatory neurons": "#95819F",
+            "Migratory neurons": "#457b9d",
+            "Neuron progenitors": "#6A0B78",
+            "Excitatory neurons": "#61559E",
             "Inhibitory neurons": "#800EF1",
-            "Neurons ALK+": "#7D1C53",
+            "Neurons ALK+": "#95819F",
             "VNO neurons": "#0D16C8",
             "junk neurons": "#f1faee",
-            "Olfactory ensheathing glia": "#9ecae1",  # AE8C0D
+            "Olf. ensh. glia": "#AE8C0D",
             "Glia progenitors": "#E3D9AC",
-            "Schwann cells": "#FAF9BA",  # C0AC51
-            "Myeloid": "#7E909D",  # CB7647
+            "Schwann cells": "#C0AC51",
+            "Myeloid": "#736376",
             "Microglia": "#91BFB7",
             "Vascular EC": "#E788C2",
             "Lymphatic EC": "#F78896",
-            "Satellites": "#9CBBA6",
-            "Skeletal muscle": "#9EB3DD",  # 3868A6
+            "Satellites": "#CB7647",
+            "Skeletal muscle": "#926B54",
             "Stromal0": "#99D6A9",
             "Stromal1": "#1B8F76",
-            "Stromal2": "#BBD870",
+            "Stromal2": "#9DAF07",
             "Stromal3": "#4CAD4C",
-            "Pericytes": "#0B4B19",
-            "Cartilages": "#9DAF07",
+            "Pericytes": "#BBD870",
+            "Cartilages": "#0B4B19",
         }
     elif color_key == "population paolo":
         palette = {
             "Olfactory epithelium": "#EF1B4F",
-            "Respiratory epithelium": "#803800",
+            "Respiratory epithelium": "#5562B7",
             "Neurons": "#6E5489",
             "Glia": "#919976",
             "Immune": "#2EECDB",
             "Endothelium": "#CC79A7",
-            "Myocytes": "#5562B7",
-            "Stroma": "#009E73",
+            "Myocytes": "#803800",
+            "Stroma": "#736376",
         }
     elif color_key == "fluo":
         palette = {

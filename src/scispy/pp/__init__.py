@@ -1,8 +1,7 @@
-from .basic import run_scanpy, scvi_annotate, switch_region, sync_shapes
+from .basic import run_scanpy, scvi_annotate, sync_shape
 
 __all__ = [
     "run_scanpy",
-    "sync_shapes",
-    "switch_region",
     "scvi_annotate",
+    "sync_shape",
 ]

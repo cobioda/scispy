@@ -54,53 +54,10 @@ def run_scanpy(sdata: sd.SpatialData, min_counts: int = 20, resolution: float = 
     plt.tight_layout()
 
     # synchronize current shapes with filtered table
-    region = sdata.table.uns["spatialdata_attrs"]["region"]
-    sync_shapes(sdata, region)
+    sync_shape(sdata)
 
     # for vizgen previous analysis
     # sdata.shapes['cell_boundaries'] = sdata.shapes['cell_boundaries'].loc[sdata.table.obs.index.tolist()]
-
-
-def sync_shapes(
-    sdata: sd.SpatialData,
-    shape_key: str = None,
-):
-    """Synchronize shapes with table
-
-    Parameters
-    ----------
-    sdata
-        SpatialData object.
-    shape_key
-        key of shapes to synchronize
-
-    """
-    if shape_key is None:
-        shape_key = sdata.table.uns["spatialdata_attrs"]["region"]
-
-    instance_key = sdata.table.uns["spatialdata_attrs"]["instance_key"]
-    sdata.shapes[shape_key] = sdata.shapes[shape_key].loc[sdata.table.obs[instance_key].tolist()]
-
-
-def switch_region(
-    sdata: sd.SpatialData,
-    region: str = "cell_boundaries",  # could be cell_boundaries, nucleus_boundaries or cell_circles for xenium
-):
-    """Swith to region of SpatialData object
-
-    Parameters
-    ----------
-    sdata
-        SpatialData object.
-    region
-        region (need to be a valid shape element).
-    """
-    # if i switch region
-    sdata.table.obs.region = region
-    sdata.table.uns["spatialdata_attrs"]["region"] = [region]
-    # i need to sync it to table
-    instance_key = sdata.table.uns["spatialdata_attrs"]["instance_key"]
-    sdata.shapes[region] = sdata.shapes[region].loc[sdata.table.obs[instance_key].tolist()]
 
 
 def scvi_annotate(
@@ -201,3 +158,45 @@ def scvi_annotate(
     ad_spatial = ad_spatial[ad_spatial.obs[f"{label_key}_score"] >= filter_under_score]
     filtered_cells = nb_cells - ad_spatial.shape[0]
     print("low assignment score filtering ", filtered_cells)
+
+
+def sync_shape(
+    sdata: sd.SpatialData,
+    shape_key: str = None,
+):
+    """Synchronize shapes with table
+
+    Parameters
+    ----------
+    sdata
+        SpatialData object.
+    shape_key
+        key of shapes to synchronize
+
+    """
+    if shape_key is None:
+        shape_key = sdata.table.uns["spatialdata_attrs"]["region"]
+
+    instance_key = sdata.table.uns["spatialdata_attrs"]["instance_key"]
+    sdata.shapes[shape_key] = sdata.shapes[shape_key].loc[sdata.table.obs[instance_key].tolist()]
+
+
+# def switch_region(
+#    sdata: sd.SpatialData,
+#    region: str = "cell_boundaries",  # could be cell_boundaries, nucleus_boundaries or cell_circles for xenium
+# ):
+#    """Swith to region of SpatialData object
+#
+#    Parameters
+#    ----------
+#    sdata
+#        SpatialData object.
+#    region
+#        region (need to be a valid shape element).
+#    """
+#    # if i switch region
+#    sdata.table.obs.region = region
+#    sdata.table.uns["spatialdata_attrs"]["region"] = [region]
+#    # i need to sync it to table
+#    instance_key = sdata.table.uns["spatialdata_attrs"]["instance_key"]
+#    sdata.shapes[region] = sdata.shapes[region].loc[sdata.table.obs[instance_key].tolist()]
