@@ -103,3 +103,31 @@ def load_xenium(
     # sdata['nucleus_boundaries'].index.name = None
 
     return sdata
+
+
+def load_cosmx(
+    path: str,
+    dataset_id: str = "R5941_ColonTMA",
+) -> sd.SpatialData:
+    """Load cosmx data as SpatialData object
+
+    Parameters
+    ----------
+    path
+        path to folder.
+    dataset_id
+        dataset_id.
+
+    Returns
+    -------
+    SpatialData object
+    """
+    sdata = spatialdata_io.cosmx(path, dataset_id=dataset_id, transcripts=True)
+
+    sdata.table.layers["counts"] = sdata.table.X.copy()
+    df = pd.DataFrame(sdata.table.obsm["spatial"])
+    df.columns = ["center_x", "center_y"]
+    sdata.table.obs[["center_x", "center_y"]] = df
+    sdata.table.uns["spatialdata_attrs"]["feature_key"] = "target"
+
+    return sdata

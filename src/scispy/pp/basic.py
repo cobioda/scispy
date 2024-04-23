@@ -7,7 +7,13 @@ import squidpy as sq
 from matplotlib import pyplot as plt
 
 
-def run_scanpy(sdata: sd.SpatialData, min_counts: int = 20, resolution: float = 0.5, key: str = "leiden"):
+def run_scanpy(
+    sdata: sd.SpatialData,
+    min_counts: int = 20,
+    resolution: float = 0.5,
+    positive_coord_only: bool = True,
+    key: str = "leiden",
+):
     """Filter and run scanpy analysis.
 
     Parameters
@@ -31,10 +37,11 @@ def run_scanpy(sdata: sd.SpatialData, min_counts: int = 20, resolution: float = 
 
     sc.pp.filter_cells(sdata.table, min_counts=min_counts)
 
-    adata = sdata.table[sdata.table.obs.center_x > 0]
-    adata2 = adata[adata.obs.center_y > 0]
-    del sdata.table
-    sdata.table = adata2
+    if positive_coord_only is True:
+        adata = sdata.table[sdata.table.obs.center_x > 0]
+        adata2 = adata[adata.obs.center_y > 0]
+        del sdata.tables["table"]
+        sdata.table = adata2
 
     print("remaining cells=", sdata.table.shape[0])
 

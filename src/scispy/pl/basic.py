@@ -242,6 +242,7 @@ def plot_sdata(
     point_groups: tuple = None,  # 10 maximum
     grid: bool = False,
     save: bool = False,
+    target_coordinates: str = "microns",
     save_format: str = "pdf",
 ):
     """Plot sdata object (i.e. embedding and polygons). This should always works if well synchronized sdata object
@@ -278,6 +279,7 @@ def plot_sdata(
     if cmap is not None:  # case on continuous value like gene expression or .obs metadata
         args_shapes["cmap"] = cmap
 
+    args_shapes["coordinate_system"] = target_coordinates
     sdata.pl.render_shapes(**args_shapes).pl.show(ax=ax)
 
     if point_groups is not None:
