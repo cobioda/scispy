@@ -27,7 +27,7 @@ def load_merscope(
         z layers to load.
     feature_key
         default column for feature name in transcripts.
-        
+
     Returns
     -------
     SpatialData object
@@ -137,7 +137,7 @@ def load_cosmx(
     """
     sdata = spatialdata_io.cosmx(path, dataset_id=dataset_id, transcripts=True)
     sdata['table'].layers["counts"] = sdata['table'].X.copy()
-    sdata['table'].obs[["center_x", "center_y"]] = sdata.['table'].obsm["spatial"]
+    sdata['table'].obs[["center_x", "center_y"]] = sdata['table'].obsm["spatial"]
     sdata['table'].uns["spatialdata_attrs"]["feature_key"] = feature_key
     # sdata.table.uns["spatialdata_attrs"]["region"] = region
 
