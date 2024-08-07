@@ -9,6 +9,7 @@ def load_merscope(
     vpt_outputs: str = None,
     region_name: str = "region_0",
     z_layers: int = 2,
+    feature_key: str = "gene",
 ) -> sd.SpatialData:
     """Load vizgen merscope data as SpatialData object
 
@@ -24,22 +25,25 @@ def load_merscope(
         slide_name id.
     z_layers
         z layers to load.
-
+    feature_key
+        default column for feature name in transcripts.
+        
     Returns
     -------
     SpatialData object
     """
     sdata = spatialdata_io.merscope(
-        path=path, vpt_outputs=vpt_outputs, region_name=region_name, slide_name=slide_name, z_layers=z_layers
+        path=path, vpt_outputs=vpt_outputs, region_name=region_name, 
+        slide_name=slide_name, z_layers=z_layers
     )
 
-    sdata.table.obs_names.name = None
+    sdata['table'].obs_names.name = None
+    sdata['table'].layers["counts"] = sdata['table'].X.copy()
+    sdata['table'].uns["spatialdata_attrs"]["feature_key"] = feature_key
 
     # if not sdata.locate_element(sdata.table.uns["spatialdata_attrs"]["region"]) == []:
     #    sdata[sdata.table.uns["spatialdata_attrs"]["region"]].index.name = None
-
-    sdata.table.uns["spatialdata_attrs"]["feature_key"] = "gene"
-
+    
     # Transform coordinates to mosaic pixel coordinates
     # transformation_matrix = pd.read_csv(
     #    path + "/images/micron_to_mosaic_pixel_transform.csv", header=None, sep=" "
@@ -56,7 +60,6 @@ def load_merscope(
     # coord_microns = sdata.table[["center_x", "center_y"]].to_numpy()
     # sdata.table.obsm={"microns": coord_microns, "pixels": coord_pixels},
 
-    sdata.table.layers["counts"] = sdata.table.X.copy()
     # percent_in_cell = sdata.table.obs.n_Counts.sum(axis=0) * 100 / len(sdata[key + '_transcripts'])
     # print("\n" + slide_name)
     # print("total cells=", sdata.table.obs.shape[0])
@@ -70,7 +73,10 @@ def load_merscope(
 
 def load_xenium(
     path: str,
+    index_table: bool = True,
     region: str = "cell_boundaries",
+    feature_key: str = "feature_name",
+    n_jobs: int = 1,
 ) -> sd.SpatialData:
     """Load xenium data as SpatialData object
 
@@ -78,25 +84,29 @@ def load_xenium(
     ----------
     path
         path to folder.
+    index_table
+        rename the index in table.obs with the cell_id
     region
         default shape element for region in table.obs.
-
+    feature_key
+        default column for feature name in transcripts.
+    n_jobs
+        number of jobs to load the xenium object
     Returns
     -------
     SpatialData object
     """
-    sdata = spatialdata_io.xenium(path)
-    sdata.table.layers["counts"] = sdata.table.X.copy()
-    df = pd.DataFrame(sdata.table.obsm["spatial"])
-    df.columns = ["center_x", "center_y"]
-    sdata.table.obs[["center_x", "center_y"]] = df
+    sdata = spatialdata_io.xenium(path, n_jobs = n_jobs)
+    sdata['table'].layers["counts"] = sdata['table'].X.copy()
+    sdata['table'].obs[["center_x", "center_y"]] = sdata['table'].obsm["spatial"]
+    
+    sdata['table'].obs["region"] = region
+    sdata['table'].uns["spatialdata_attrs"]["region"] = region
+    sdata['table'].uns["spatialdata_attrs"]["feature_key"] = feature_key
 
-    sdata.table.obs.region = region
-    sdata.table.uns["spatialdata_attrs"]["region"] = region
-    sdata.table.uns["spatialdata_attrs"]["feature_key"] = "feature_name"
-
-    # sdata.table.obs = sdata.table.obs.set_index(sdata.table.obs.cell_id)
-    # sdata.table.obs.index.name= None
+    if index_table:
+        sdata['table'].obs.index = sdata['table'].obs['cell_id']
+        sdata['table'].obs.index.name = None
     # sdata.table.obs_names.name = None
     # sdata['cell_circles'].index.name = None
     # sdata['cell_boundaries'].index.name = None
@@ -108,6 +118,7 @@ def load_xenium(
 def load_cosmx(
     path: str,
     dataset_id: str = "R5941_ColonTMA",
+    feature_key: str = "target",
 ) -> sd.SpatialData:
     """Load cosmx data as SpatialData object
 
@@ -117,17 +128,24 @@ def load_cosmx(
         path to folder.
     dataset_id
         dataset_id.
+    feature_key
+        default column for feature name in transcripts.
 
     Returns
     -------
     SpatialData object
     """
     sdata = spatialdata_io.cosmx(path, dataset_id=dataset_id, transcripts=True)
-
-    sdata.table.layers["counts"] = sdata.table.X.copy()
-    df = pd.DataFrame(sdata.table.obsm["spatial"])
-    df.columns = ["center_x", "center_y"]
-    sdata.table.obs[["center_x", "center_y"]] = df
-    sdata.table.uns["spatialdata_attrs"]["feature_key"] = "target"
+    sdata['table'].layers["counts"] = sdata['table'].X.copy()
+    sdata['table'].obs[["center_x", "center_y"]] = sdata.['table'].obsm["spatial"]
+    sdata['table'].uns["spatialdata_attrs"]["feature_key"] = feature_key
+    # sdata.table.uns["spatialdata_attrs"]["region"] = region
 
     return sdata
+
+
+# make a class load_data
+# parameter -> techno = xenium merscope or cosmx
+# xenium = {"function" : spatialdata_io.xenium(path, n_jobs = n_jobs),
+#           "region" : region,
+#           "feature_key" : "feature_name"}
