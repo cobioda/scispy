@@ -4,13 +4,13 @@ import spatialdata_io
 
 
 def load_merscope(
-    path: str,
-    slide_name: str,
-    vpt_outputs: str = None,
-    region_name: str = "region_0",
-    z_layers: int = 2,
-    feature_key: str = "gene",
-) -> sd.SpatialData:
+    path: 'str',
+    slide_name: 'str',
+    vpt_outputs: 'str' = None,
+    region_name: 'str' = "region_0",
+    z_layers: 'int' = 2,
+    feature_key: 'str' = "gene",
+) -> 'sd.SpatialData':
     """Load vizgen merscope data as SpatialData object
 
     Parameters
@@ -72,12 +72,12 @@ def load_merscope(
 
 
 def load_xenium(
-    path: str,
-    index_table: bool = True,
-    region: str = "cell_boundaries",
-    feature_key: str = "feature_name",
-    n_jobs: int = 1,
-) -> sd.SpatialData:
+    path: 'str',
+    index_table: 'bool' = True,
+    region: 'str' = "cell_boundaries",
+    feature_key: 'str' = "feature_name",
+    n_jobs: 'int' = 1,
+) -> 'sd.SpatialData':
     """Load xenium data as SpatialData object
 
     Parameters
@@ -92,6 +92,7 @@ def load_xenium(
         default column for feature name in transcripts.
     n_jobs
         number of jobs to load the xenium object
+        
     Returns
     -------
     SpatialData object
@@ -116,10 +117,10 @@ def load_xenium(
 
 
 def load_cosmx(
-    path: str,
-    dataset_id: str = "R5941_ColonTMA",
-    feature_key: str = "target",
-) -> sd.SpatialData:
+    path: 'str',
+    dataset_id: 'str' = "R5941_ColonTMA",
+    feature_key: 'str' = "target",
+) -> 'sd.SpatialData':
     """Load cosmx data as SpatialData object
 
     Parameters

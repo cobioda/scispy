@@ -8,11 +8,15 @@ from matplotlib import pyplot as plt
 
 
 def run_scanpy(
-    sdata: sd.SpatialData,
-    min_counts: int = 20,
-    resolution: float = 0.5,
-    positive_coord_only: bool = True,
-    key: str = "leiden",
+    sdata: 'sd.SpatialData',
+    min_counts: 'int | None' = 20,
+    max_value: 'float | None' = 10,
+    n_neighbors: 'int' = 10,
+    resolution: 'float' = 0.5,
+    key: 'str' = 'leiden',
+    positive_coord_only: 'bool' = True,
+    *args,
+    **kwargs,
 ):
     """Filter and run scanpy analysis.
 
@@ -22,42 +26,48 @@ def run_scanpy(
         SpatialData object.
     min_counts
         minimum transcript count to keep cell.
+    max_value
+        clip to this value after scaling. If `None`, do not clip.
+    n_neighbors
+        number of local neighborhood.
     resolution
         resolution for clustering.
     key
         key to add for clusters.
-
+    positive_coord_only
+        keep only cells with positive coordinates
     """
-    print("total cells=", sdata.table.shape[0])
+    adata = sdata['table']
+    print("Total cells: ", adata.shape[0])
+    sc.pp.filter_cells(adata, min_counts=min_counts, *args, **kwargs)
 
     # filter also cells with negative coordinate center_x and center_y
     # sdata.table.obs["n_counts"] = sdata.table.layers['counts'].sum(axis=1)
     # sdata.table.obs.loc[sdata.table.obs['center_x'] < 0, 'n_counts'] = 0
     # sdata.table.obs.loc[sdata.table.obs['center_y'] < 0, 'n_counts'] = 0
 
-    sc.pp.filter_cells(sdata.table, min_counts=min_counts)
-
-    if positive_coord_only is True:
-        adata = sdata.table[sdata.table.obs.center_x > 0]
-        adata2 = adata[adata.obs.center_y > 0]
+    if positive_coord_only & check_if_negative_coords(sdata):
+        print("Remove cells with negative coordinates")
+        # inutile si pas de coords neg
+        adata = adata[adata.obs['center_x'] > 0]
+        adata2 = adata[adata.obs['center_y'] > 0]
         del sdata.tables["table"]
-        sdata.table = adata2
+        sdata['table'] = adata2
+    print("Remaining cells:", adata.shape[0])
 
-    print("remaining cells=", sdata.table.shape[0])
+    sc.pp.normalize_total(adata, *args, **kwargs)
+    sc.pp.log1p(adata)
+    adata.raw = adata
 
-    sc.pp.normalize_total(sdata.table)
-    sc.pp.log1p(sdata.table)
-    sdata.table.raw = sdata.table
-
-    sc.pp.scale(sdata.table, max_value=10)
-    sc.tl.pca(sdata.table, svd_solver="arpack")
-    sc.pp.neighbors(sdata.table, n_neighbors=10)
-    sc.tl.umap(sdata.table)
-    sc.tl.leiden(sdata.table, resolution=resolution, key_added=key)
-
+    sc.pp.scale(adata, max_value=max_value, *args, **kwargs)
+    sc.tl.pca(adata, svd_solver="arpack", *args, **kwargs)
+    sc.pp.neighbors(adata, n_neighbors=n_neighbors, *args, **kwargs)
+    sc.tl.umap(adata, *args, **kwargs)
+    sc.tl.leiden(adata, resolution=resolution, key_added=key, *args, **kwargs)
+    
     fig, axs = plt.subplots(1, 2, figsize=(20, 6))
-    sc.pl.embedding(sdata.table, "umap", color=key, ax=axs[0], show=False)
-    sq.pl.spatial_scatter(sdata.table, color=key, shape=None, size=1, ax=axs[1])
+    sc.pl.embedding(adata, "umap", color=key, ax=axs[0], show=False)
+    sq.pl.spatial_scatter(adata, color=key, shape=None, size=1, ax=axs[1])
     plt.tight_layout()
 
     # synchronize current shapes with filtered table
@@ -65,6 +75,26 @@ def run_scanpy(
 
     # for vizgen previous analysis
     # sdata.shapes['cell_boundaries'] = sdata.shapes['cell_boundaries'].loc[sdata.table.obs.index.tolist()]
+
+
+def sync_shape(
+    sdata: 'sd.SpatialData',
+    shape_key: 'str | None' = None,
+):
+    """Synchronize shapes with table
+
+    Parameters
+    ----------
+    sdata
+        SpatialData object.
+    shape_key
+        key of shapes to synchronize
+    """
+    if shape_key is None:
+        shape_key = sdata['table'].uns["spatialdata_attrs"]["region"]
+
+    instance_key = sdata['table'].uns["spatialdata_attrs"]["instance_key"]
+    sdata[shape_key] = sdata[shape_key].loc[sdata['table'].obs[instance_key].tolist()]
 
 
 def scvi_annotate(
@@ -165,27 +195,6 @@ def scvi_annotate(
     ad_spatial = ad_spatial[ad_spatial.obs[f"{label_key}_score"] >= filter_under_score]
     filtered_cells = nb_cells - ad_spatial.shape[0]
     print("low assignment score filtering ", filtered_cells)
-
-
-def sync_shape(
-    sdata: sd.SpatialData,
-    shape_key: str = None,
-):
-    """Synchronize shapes with table
-
-    Parameters
-    ----------
-    sdata
-        SpatialData object.
-    shape_key
-        key of shapes to synchronize
-
-    """
-    if shape_key is None:
-        shape_key = sdata.table.uns["spatialdata_attrs"]["region"]
-
-    instance_key = sdata.table.uns["spatialdata_attrs"]["instance_key"]
-    sdata.shapes[shape_key] = sdata.shapes[shape_key].loc[sdata.table.obs[instance_key].tolist()]
 
 
 # def switch_region(
