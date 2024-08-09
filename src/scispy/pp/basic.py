@@ -250,14 +250,14 @@ def run_scANVI(
     lvae.train(max_epochs=20, n_samples_per_label=100)
     print('Done scANVI')
     
-    concat.obs["C_scANVI"] = lvae.predict(concat)
-    concat.obsm["X_scANVI"] = lvae.get_latent_representation(concat)
+    adata_train.obs["C_scANVI"] = lvae.predict(adata_train)
+    adata_train.obsm["X_scANVI"] = lvae.get_latent_representation(adata_train)
     
     # add score
-    df_soft = lvae.predict(concat, soft=True) 
-    concat.obs["score"] = df_soft.max(axis=1)
+    df_soft = lvae.predict(adata_train, soft=True) 
+    adata_train.obs["score"] = df_soft.max(axis=1)
 
-    return concat
+    return adata_train
 
 
 
