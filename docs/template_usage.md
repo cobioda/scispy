@@ -59,14 +59,14 @@ Now that all the files of the newly created project have been committed, go ahea
 
 ```bash
 # update the `origin` of your local repo with the remote github link
-git remote add origin https://github.com/bfxomics/scispy.git
+git remote add origin https://github.com/cobioda/scispy.git
 # rename the default branch to main
 git branch -M main
 # push all your files to remote
 git push -u origin main
 ```
 
-Your project should be now available at `https://github.com/bfxomics/scispy`. While the repository at this point can be directly used, there are few remaining steps that needs to be done in order to achieve full functionality.
+Your project should be now available at `https://github.com/cobioda/scispy`. While the repository at this point can be directly used, there are few remaining steps that needs to be done in order to achieve full functionality.
 
 ### The pyproject.toml file
 
