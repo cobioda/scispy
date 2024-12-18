@@ -5,6 +5,7 @@ from .basic import (
     get_sdata_polygon,
     prep_pseudobulk,
     run_pseudobulk,
+    scis_prop,
     sdata_querybox,
     sdata_rotate,
 )
@@ -18,4 +19,5 @@ __all__ = [
     "run_pseudobulk",
     "sdata_rotate",
     "sdata_querybox",
+    "scis_prop",
 ]

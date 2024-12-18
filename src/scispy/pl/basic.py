@@ -398,7 +398,6 @@ def get_palette(color_key: str) -> dict:
             "B": "#fffbbd",
             "Megak": "#006400",
             "Pericyte": "#9c6644",
-            "Pericytes": "#9c6644",
             "SMC": "#d81159",
             "AdvFibro": "#ef6351",
             "AlvFibro": "#d58936",

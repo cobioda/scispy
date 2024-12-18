@@ -73,6 +73,7 @@ def scvi_annotate(
     label_ref: str = "celltype",
     label_key: str = "celltype",
     layer: str = "counts",
+    batch_size: int = 128,
     metaref2add: tuple = [],
     filter_under_score: float = 0.5,
 ):
@@ -128,7 +129,7 @@ def scvi_annotate(
     scvi.model.SCVI.setup_anndata(concat, layer=layer, batch_key="tech")
     vae = scvi.model.SCVI(concat)
     # Train the model
-    vae.train()
+    vae.train(batch_size=batch_size)
 
     # Register the object and run scANVI
     scvi.model.SCANVI.setup_anndata(
@@ -140,7 +141,7 @@ def scvi_annotate(
     )
 
     lvae = scvi.model.SCANVI.from_scvi_model(vae, labels_key=label_key, unlabeled_category="nan", adata=concat)
-    lvae.train(max_epochs=20, n_samples_per_label=100)
+    lvae.train(max_epochs=20, n_samples_per_label=100, batch_size=batch_size)
 
     concat.obs["C_scANVI"] = lvae.predict(concat)
     concat.obsm["X_scANVI"] = lvae.get_latent_representation(concat)
@@ -152,7 +153,6 @@ def scvi_annotate(
     merfish_mask = concat.obs["tech"] == "MERFISH"
     ad_spatial.obs[f"{label_key}"] = concat.obs["C_scANVI"][merfish_mask].values
     ad_spatial.obs[f"{label_key}_score"] = concat.obs["score"][merfish_mask].values
-
     ad_spatial.obs[f"{label_key}"] = ad_spatial.obs[f"{label_key}"].astype("category")
 
     for i in range(0, len(metaref2add)):
@@ -161,10 +161,10 @@ def scvi_annotate(
         ad_spatial.obs[f"{metaref2add[i]}"] = ad_spatial.obs[f"{metaref2add[i]}"].astype("category")
 
     # remove cells having a bad score
-    nb_cells = ad_spatial.shape[0]
-    ad_spatial = ad_spatial[ad_spatial.obs[f"{label_key}_score"] >= filter_under_score]
-    filtered_cells = nb_cells - ad_spatial.shape[0]
-    print("low assignment score filtering ", filtered_cells)
+    # nb_cells = ad_spatial.shape[0]
+    # ad_spatial = ad_spatial[ad_spatial.obs[f"{label_key}_score"] >= filter_under_score]
+    # filtered_cells = nb_cells - ad_spatial.shape[0]
+    # print("low assignment score filtering ", filtered_cells)
 
 
 def sync_shape(
