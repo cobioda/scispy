@@ -1,9 +1,5 @@
 # API
 
-```{eval-rst}
-.. module:: scispy
-```
-
 ## i/o
 
 ```{eval-rst}
