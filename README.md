@@ -7,13 +7,13 @@
 [link-tests]: https://github.com/bfxomics/scispy/actions/workflows/test.yml
 [badge-docs]: https://img.shields.io/readthedocs/scispy
 
-scispy is a pyhton package for in-situ spatial-omics datasets analysis, mainly developped for vizgen merscope,
+scispy is a python package for in-situ spatial-omics datasets analysis, mainly developped for vizgen merscope,
 scispy is build on top of spatialdata and spatialdata-io and spatialdata-plot librairies which can handle for
 Nanostring (cosmx) and 10xGenomics (Xenium) experiments.
 
 ## Getting started
 
-Please refers to the [documentation][link-docs]. In particular, the
+Please refer to the [documentation][link-docs]. In particular, the
 
 -   [API documentation][link-api].
 
