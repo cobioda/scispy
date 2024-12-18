@@ -13,7 +13,7 @@ Nanostring (cosmx) and 10xGenomics (Xenium) experiments.
 
 ## Getting started
 
-Please refer to the [documentation][link-docs]. In particular, the
+Please refers to the [documentation][link-docs]. In particular, the
 
 -   [API documentation][link-api].
 
