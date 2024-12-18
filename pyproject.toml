@@ -22,14 +22,14 @@ dependencies = [
     #"scvi-tools",
     "pydeseq2",
     "decoupler",
-    #"spatialdata",
-    #"spatialdata-io",
-    #"spatialdata-plot",
+    "squidpy",
+    "spatialdata",
+    "spatialdata-io",
+    "spatialdata-plot",
     #"napari-spatialdata",
-    #"squidpy",
-    "adjustText",
     "statannotations",
     #"torch==1.13.1",
+    #"adjustText",
 
     # for debug logging (referenced from the issue template)
     "session-info"
