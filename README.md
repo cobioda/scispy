@@ -7,16 +7,16 @@
 ---
 
 <p align="center">
-  <a href="https://scispy.readthedocs.io/en/latest/" target="_blank">Documentation</a>
-  <a href="https://scispy.readthedocs.io/en/latest/notebooks/tutorial.html" target="_blank">Examples</a>
+  <a href="https://scispy.readthedocs.io/en/latest/" target="_blank">Documentation</a> •
+  <a href="https://scispy.readthedocs.io/en/latest/docs/notebooks/example.ipynb" target="_blank">Examples</a> •
   <a href="https://www.biorxiv.org/" target="_blank">Preprint</a>
 </p>
 
 [![Tests][badge-tests]][link-tests]
 [![Documentation][badge-docs]][link-docs]
 
-[badge-tests]: https://img.shields.io/github/actions/workflow/status/bfxomics/scispy/test.yaml?branch=main
-[link-tests]: https://github.com/bfxomics/scispy/actions/workflows/test.yml
+[badge-tests]: https://img.shields.io/github/actions/workflow/status/cobioda/scispy/test.yaml?branch=main
+[link-tests]: https://github.com/cobioda/scispy/actions/workflows/test.yml
 [badge-docs]: https://img.shields.io/readthedocs/scispy
 
 </div>
@@ -28,14 +28,14 @@
 </p>
 
 <p align="center">
-  <img src="https://github.com/cobioda/scispy/docs/_static/scispy.png" width="500px">
+  <img src="https://github.com/cobioda/scispy/docs/_static/scispy.png" width="300px">
 </p>
 
 ## Features
 
 -   **Read in-situ spatial-omics assays experiments**: build on top of spatialdata package
 -   **Automatic cell type annotation**: scanvi implementation
--   **Import anatomical .csv shape file from xenium explorer**: as anndata observation
+-   **Import anatomical .csv shape file from xenium explorer**: as anndata observations
 -   **Automatic run pseudobulk data analysis**: using decoupler and pydeseq2 packages
 -   **Compute cell type proportion in region**: integrating statistical test in case of replicates
 -   **Produce high quality spatial figures**: build on top of spatialdata_plot package
@@ -45,7 +45,7 @@
 Please refer to the [documentation][link-docs]. In particular, the
 
 -   [API documentation][link-api].
--   [Tutorials][link-tutorial]
+-   [Tutorials][https://scispy.readthedocs.io/en/latest/docs/notebooks/example.ipynb]
 
 ## Installation
 
