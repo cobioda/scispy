@@ -2,7 +2,6 @@ import pandas as pd
 import spatialdata as sd
 import spatialdata_io
 
-
 def load_merscope(
     path: str,
     slide_name: str,
