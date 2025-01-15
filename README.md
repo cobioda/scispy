@@ -45,7 +45,7 @@
 Please refer to the [documentation][link-docs]. In particular, the
 
 -   [API documentation][link-api].
--   [Tutorials][https://scispy.readthedocs.io/en/latest/docs/notebooks/example.ipynb]
+-   [Tutorials][link-tutorial]
 
 ## Installation
 

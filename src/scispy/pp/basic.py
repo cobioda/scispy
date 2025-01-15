@@ -3,9 +3,7 @@ import pandas as pd
 import scanpy as sc
 import scvi
 import spatialdata as sd
-import squidpy as sq
 from matplotlib import pyplot as plt
-
 
 def run_scanpy(
     sdata: sd.SpatialData,
@@ -57,7 +55,7 @@ def run_scanpy(
 
     fig, axs = plt.subplots(1, 2, figsize=(20, 6))
     sc.pl.embedding(sdata.table, "umap", color=key, ax=axs[0], show=False)
-    sq.pl.spatial_scatter(sdata.table, color=key, shape=None, size=1, ax=axs[1])
+    sc.pl.embedding(sdata.table, "spatial", color=key, size=1, ax=axs[1])
     plt.tight_layout()
 
     # synchronize current shapes with filtered table
