@@ -3,7 +3,6 @@ import pandas as pd
 import scanpy as sc
 import seaborn as sns
 import spatialdata as sd
-import squidpy as sq
 from matplotlib import pyplot as plt
 from spatialdata import SpatialData
 
@@ -255,11 +254,12 @@ def plot_sdata(
         color key from .table.obs
     """
     if shape_keys is None:
-        shape_keys = list(sdata.shapes.keys())  # better would be to get the list of spatialdata_attrs 'cell_regions'
+        shape_keys = sdata.table.uns['spatialdata_attrs']['region'][0]
+        #shape_keys = list(sdata.shapes.keys())  # better would be to get the list of spatialdata_attrs 'cell_regions'
     if feature_key is None:
         feature_key = sdata.tables[list(sdata.tables.keys())[0]].uns["spatialdata_attrs"]["feature_key"]
 
-    args_shapes = {"elements": shape_keys, "color": color_key}
+    args_shapes = {"element": shape_keys, "color": color_key}
     args_points = {"size": point_size, "color": feature_key}
 
     # size=0.01, linewidth=None, marker=".", edgecolor = 'none', markeredgewidth=0.0
@@ -332,13 +332,14 @@ def plot_multi_sdata(
     ax1.set_title("anndata.obs coordinates")
     ax1.invert_yaxis()
 
-    sdata.pl.render_shapes(elements=sdata.table.uns["spatialdata_attrs"]["region"], color=color_key).pl.show(ax=ax2)
+    sdata.pl.render_shapes(element=sdata.table.uns["spatialdata_attrs"]["region"][0], color=color_key).pl.show(ax=ax2)
     ax2.get_legend().remove()
     ax2.set_title("spatialdata polygons")
 
-    sq.pl.spatial_scatter(sdata.table, color=color_key, shape=None, size=1, ax=ax3)
-    # ax2.get_legend().remove()
-    ax3.set_title("squidpy spatial")
+    sc.pl.embedding(sdata.table, "spatial", color=color_key, size=1, ax=ax3)
+    #sq.pl.spatial_scatter(sdata.table, basis='spatial', color=color_key, shape=None, size=1, ax=ax3)
+    #ax2.get_legend().remove()
+    #ax3.set_title("squidpy spatial")
 
     plt.tight_layout()
 
@@ -403,40 +404,42 @@ def get_palette(color_key: str) -> dict:
             "AlvFibro": "#d58936",
             "MyoFibro": "#69140e",
         }
-    elif color_key == "celltype paolo":
+    elif color_key == "paolo":
         # paolo
         palette = {
-            "Early OSNs": "#18DED2",
-            "Sustentaculars": "#C09ACA",
-            "HBCs": "#E41A1C",
-            "GBCs": "#F48B5A",
-            "Precursors": "#706fd3",
-            "Duct/MUC": "#efe13c",
-            "Multiciliated": "#1f618d",
-            "Deuterosomal": "#3498db",
-            "GnRH neurons": "#E00EF1",
-            "Migratory neurons": "#457b9d",
-            "Neuron progenitors": "#6A0B78",
-            "Excitatory neurons": "#61559E",
-            "Inhibitory neurons": "#800EF1",
-            "Neurons ALK+": "#95819F",
-            "VNO neurons": "#0D16C8",
-            "junk neurons": "#f1faee",
-            "Olf. ensh. glia": "#AE8C0D",
-            "Glia progenitors": "#E3D9AC",
-            "Schwann cells": "#C0AC51",
-            "Myeloid": "#736376",
-            "Microglia": "#91BFB7",
-            "Vascular EC": "#E788C2",
-            "Lymphatic EC": "#F78896",
-            "Satellites": "#CB7647",
-            "Skeletal muscle": "#926B54",
+            "Cartilages": "#0B4B19",
             "Stromal0": "#99D6A9",
             "Stromal1": "#1B8F76",
             "Stromal2": "#9DAF07",
-            "Stromal3": "#4CAD4C",
+            "Osteoblasts": "#4CAD4C",
+            "Lymphatic EC": "#F78896",
+            "Vascular EC": "#E788C2",
             "Pericytes": "#BBD870",
-            "Cartilages": "#0B4B19",
+            "Satellites": "#CB7647",
+            "Skeletal muscle": "#926B54",
+            "Neural crest": "#E3D9AC",
+            "Olf. ensh. glia": "#cd6889",
+            "Glia progenitors": "#FF4500",
+            "ALK neurons": "#95819F",
+            "Olfactory HBCs": "#E41A1C",
+            "Respiratory HBCs": "#C82C73",
+            "Cycling HBCs": "#C2A523",
+            "Tufts": "#eb10fd",
+            "Duct": "#efe13c",
+            "Multiciliated": "#1f618d",
+            "Deuterosomal": "#3498db",
+            "Sustentaculars": "#C09ACA",
+            "GBCs": "#F48B5A",
+            "OSN precursors": "#E69F00",
+            "iOSNs": "#f05b43",
+            "mOSNs": "#33b8ff",
+            "Neural progenitors": "#6A0B78",
+            "Excitatory neurons": "#706fd3",
+            "Inhibitory neurons": "#800EF1",
+            "VNO": "#2EECDB",
+            "GnRH neurons": "blue",
+            "Myeloid": "#736376",
+            "Microglia": "#91BFB7",
         }
     elif color_key == "population paolo":
         palette = {
@@ -538,15 +541,18 @@ def plot_per_groups(adata, clust_key, size=60, is_spatial=False, frameon=False, 
     else:
         # not working !....
         tmp.uns["spatial"] = tmp.obsm["spatial"]
-        sq.pl.spatial_scatter(
-            tmp,
-            groups=tmp.obs[clust].cat.categories[1:].values,
-            color=adata.obs[clust_key].cat.categories.tolist(),
-            size=size,
-            frameon=frameon,
-            legend_loc=legend_loc,
-            **kwargs,
-        )
+        
+        #sc.pl.embedding(sdata.table, "spatial", color=key, size=1, ax=axs[1])
+        
+        #sq.pl.spatial_scatter(
+        #    tmp,
+        #    groups=tmp.obs[clust].cat.categories[1:].values,
+        #    color=adata.obs[clust_key].cat.categories.tolist(),
+        #    size=size,
+        #    frameon=frameon,
+        #    legend_loc=legend_loc,
+        #    **kwargs,
+        #)
 
 
 def legend_without_duplicate_labels(figure):

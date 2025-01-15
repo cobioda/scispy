@@ -280,6 +280,7 @@ def run_pseudobulk(
     groups: tuple = [],
     layer: str = "counts",
     min_cells: int = 5,
+    top_volcano: int = 20,
     min_counts: int = 200,
     sign_thr: float = 0.05,
     lFCs_thr: int = 0.5,
@@ -370,13 +371,15 @@ def run_pseudobulk(
                     stat_res = DeseqStats(dds, contrast=[cond_key, cond_1, cond_2], quiet=True)
 
                     stat_res.summary()
-                    coeff_str = cond_key + "_" + cond_2 + "_vs_" + cond_1
-                    stat_res.lfc_shrink(coeff=coeff_str)
+                    #coeff_str = cond_key + "_" + cond_2 + "_vs_" + cond_1
+                    #stat_res.lfc_shrink(coeff=coeff_str)
 
+                    stat_res.lfc_shrink(coeff=cond_key+"[T."+cond_1+"]")
+                    
                     results_df = stat_res.results_df
 
                     fig, axs = plt.subplots(1, 2, figsize=figsize)
-                    dc.plot_volcano_df(results_df, x="log2FoldChange", y="padj", ax=axs[0], top=20)
+                    dc.plot_volcano_df(results_df, x="log2FoldChange", y="padj", ax=axs[0], top=top_volcano)
                     axs[0].set_title(ct)
 
                     # sign_thr=0.05, lFCs_thr=0.5
@@ -385,7 +388,7 @@ def run_pseudobulk(
                     up_msk = (results_df["log2FoldChange"] >= lFCs_thr) & (results_df["pvals"] >= -np.log10(sign_thr))
                     dw_msk = (results_df["log2FoldChange"] <= -lFCs_thr) & (results_df["pvals"] >= -np.log10(sign_thr))
                     signs = results_df[up_msk | dw_msk].sort_values("pvals", ascending=False)
-                    signs = signs.iloc[:20]
+                    signs = signs.iloc[:top_volcano]
                     signs = signs.sort_values("log2FoldChange", ascending=False)
 
                     # concatenate to total
