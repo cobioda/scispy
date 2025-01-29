@@ -99,8 +99,8 @@ def load_xenium(
     sdata['table'].layers["counts"] = sdata['table'].X.copy()
     sdata['table'].obs[["center_x", "center_y"]] = sdata['table'].obsm["spatial"]
     
-    sdata['table'].obs["region"] = region
-    sdata['table'].uns["spatialdata_attrs"]["region"] = region
+    #sdata['table'].obs["region"] = region
+    #sdata['table'].uns["spatialdata_attrs"]["region"] = region
     sdata['table'].uns["spatialdata_attrs"]["feature_key"] = feature_key
 
     if index_table:

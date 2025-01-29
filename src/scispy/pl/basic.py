@@ -5,6 +5,7 @@ import seaborn as sns
 import spatialdata as sd
 from matplotlib import pyplot as plt
 from spatialdata import SpatialData
+import spatialdata_plot
 
 from scispy.tl.basic import sdata_rotate
 
@@ -254,12 +255,12 @@ def plot_sdata(
         color key from .table.obs
     """
     if shape_keys is None:
-        shape_keys = sdata.table.uns['spatialdata_attrs']['region'][0]
+        shape_keys = sdata.table.uns['spatialdata_attrs']['region']
         #shape_keys = list(sdata.shapes.keys())  # better would be to get the list of spatialdata_attrs 'cell_regions'
     if feature_key is None:
         feature_key = sdata.tables[list(sdata.tables.keys())[0]].uns["spatialdata_attrs"]["feature_key"]
 
-    args_shapes = {"element": shape_keys, "color": color_key}
+    args_shapes = {"element": shape_keys, "method": "matplotlib", "color": color_key}
     args_points = {"size": point_size, "color": feature_key}
 
     # size=0.01, linewidth=None, marker=".", edgecolor = 'none', markeredgewidth=0.0
