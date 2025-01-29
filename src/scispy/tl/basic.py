@@ -272,10 +272,10 @@ def prep_pseudobulk(
 
 def run_pseudobulk(
     adata: an.AnnData,
+    replicate: str,
+    condition: str,
     cond_1: str,
     cond_2: str,
-    cond_key: str,
-    replicate_key: str,
     groups_key: str = "celltype",
     groups: tuple = [],
     layer: str = "counts",
@@ -286,7 +286,7 @@ def run_pseudobulk(
     lFCs_thr: int = 0.5,
     save: bool = False,
     save_prefix: str = "decoupler",
-    figsize: tuple = (10, 4),
+    figsize: tuple = (16,3),
 ) -> pd.DataFrame:
     """Decoupler pydeseq2 pseudobulk handler.
 
@@ -298,10 +298,10 @@ def run_pseudobulk(
         pseudobulk cond_1
     cond_2
         pseudobulk cond_2
-    cond_key
-        sdata.table.obs cond_key
-    replicate_key
-        sdata.table.obs replicate_key
+    condition
+        condition key
+    replicate
+        replicate key
     groups_key
         sdata.table.obs key, i.e. cell types
     groups
@@ -330,11 +330,11 @@ def run_pseudobulk(
     # https://decoupler-py.readthedocs.io/en/latest/notebooks/pseudobulk.html
     # sns.set(font_scale=0.5)
 
-    adata = adata[adata.obs[cond_key].isin([cond_1, cond_2])].copy()
+    adata = adata[adata.obs[condition].isin([cond_1, cond_2])].copy()
 
     pdata = dc.get_pseudobulk(
         adata,
-        sample_col=replicate_key,  # "pseudoname"
+        sample_col=replicate,  # "pseudoname"
         groups_col=groups_key,  # celltype
         layer=layer,
         mode="sum",
@@ -348,39 +348,42 @@ def run_pseudobulk(
 
     df_total = pd.DataFrame()
     for ct in groups:
+        print(ct)
+        
         sub = pdata[pdata.obs[groups_key] == ct].copy()
 
-        if len(sub.obs[cond_key].to_list()) > 1:
+        if len(sub.obs[condition].to_list()) > 1:
             # Obtain genes that pass the thresholds
-            genes = dc.filter_by_expr(sub, group=cond_key, min_count=5, min_total_count=5)
+            genes = dc.filter_by_expr(sub, group=condition, min_count=5, min_total_count=5)
             # Filter by these genes
             sub = sub[:, genes].copy()
 
-            if len(sub.obs[cond_key].unique().tolist()) > 1:
+            if len(sub.obs[condition].unique().tolist()) > 1:
                 # Build DESeq2 object
                 dds = DeseqDataSet(
                     adata=sub,
-                    design_factors=cond_key,
-                    ref_level=[cond_key, cond_1],
+                    design_factors=condition,
+                    ref_level=[condition, cond_1],
                     refit_cooks=True,
                     quiet=True,
                 )
-                print(len(sub.obs[replicate_key].unique().tolist()))
-                if len(sub.obs[replicate_key].unique().tolist()) > 2:
+                #print(len(sub.obs[replicate_key].unique().tolist()))
+                if len(sub.obs[replicate].unique().tolist()) > 2:
                     dds.deseq2()
-                    stat_res = DeseqStats(dds, contrast=[cond_key, cond_1, cond_2], quiet=True)
+                    stat_res = DeseqStats(dds, contrast=[condition, cond_1, cond_2], quiet=True)
 
                     stat_res.summary()
                     #coeff_str = cond_key + "_" + cond_2 + "_vs_" + cond_1
                     #stat_res.lfc_shrink(coeff=coeff_str)
 
-                    stat_res.lfc_shrink(coeff=cond_key+"[T."+cond_1+"]")
+                    # might be cond_2
+                    stat_res.lfc_shrink(coeff=condition+"[T."+cond_1+"]")
                     
                     results_df = stat_res.results_df
 
                     fig, axs = plt.subplots(1, 2, figsize=figsize)
                     dc.plot_volcano_df(results_df, x="log2FoldChange", y="padj", ax=axs[0], top=top_volcano)
-                    axs[0].set_title(ct)
+                    axs[0].set_title(ct + "("+cond_1+"-"+cond_2+")")
 
                     # sign_thr=0.05, lFCs_thr=0.5
                     results_df["pvals"] = -np.log10(results_df["padj"])
@@ -399,7 +402,7 @@ def run_pseudobulk(
                         sc.pp.normalize_total(sub)
                         sc.pp.log1p(sub)
                         sc.pp.scale(sub, max_value=10)
-                        sc.pl.matrixplot(sub, signs.index, groupby=replicate_key, ax=axs[1])
+                        sc.pl.matrixplot(sub, signs.index, groupby=replicate, ax=axs[1])
 
                     plt.tight_layout()
 
@@ -579,12 +582,14 @@ def sdata_querybox(
 
 def scis_prop(
     adata: an.AnnData,
-    celltype: str = "ct_musk",
-    zone: str = "cc_niches",
+    group_by: str = "scmusk_T4",
+    group_only: str = "",
+    split_by: str = "anatomy",
+    split_only: str = "",
+    split_by_top: int = 5,
     replicate: str = "sample",
     condition: str = "group",
     condition_order: tuple = ["CTRL", "PAH"],  # might be possible to provide more conditions
-    top: int = 5,
     figsize: tuple = (6, 3),
 ):
     """Compute per zone celltype proportion between 2 conditions using replicate for statistical testing
@@ -593,18 +598,23 @@ def scis_prop(
     ----------
     adata
         AnnData object.
-    celltype
-        celltype key in adata.obs
-    zone
-        zone key in adata.obs
+    group_by
+        group
+    group_only
+        just plot this group
+    split_by
+        x value split_by
+    split_only
+        focus on this split_by
+    split_by_top
+        top split_by to consider
     replicate
         replicate key in adata.obs
     condition
         condition key in adata.obs
     condition_order
-        tuple of the 2 conditions to test
-    top
-        top celltype to consider
+        tuple of the x conditions to test
+    
     figsize
         figure size
     Returns
@@ -612,31 +622,42 @@ def scis_prop(
 
     """
     sns.set_theme(style="whitegrid", palette="pastel")
-    l = list(adata.obs[zone].unique())
+    l = list(adata.obs[group_by].unique())
+    if group_only:
+        l = [group_only]
+
     for n in l:
-        # print(n)
-        df = adata[adata.obs[zone] == n].obs[[replicate, condition, celltype]]
-        df2 = df.groupby([replicate, condition, celltype])[celltype].count().unstack()
+        print(n)
+        df = adata[adata.obs[group_by] == n].obs[[replicate, condition, split_by]]
+        df2 = df.groupby([replicate, condition, split_by])[split_by].count().unstack()
         df2 = df2.div(df2.sum(axis=1), axis=0).reset_index()
         df2 = df2.melt(id_vars=[replicate, condition])
         df2 = df2.dropna()
         df2 = df2[df2.value > 0]
+        
+        hits = list(df[split_by].value_counts().head(split_by_top).keys())
+        df2 = df2[df2[split_by].isin(hits)]
 
-        hits = list(df[celltype].value_counts().head(top).keys())
-        df2 = df2[df2[celltype].isin(hits)]
+        if split_only:
+            df2 = df2[df2[split_by] == split_only]
+            hits = [split_only]
+
+        split_order = hits
 
         pairs = []
-        for ct in hits:
-            if len(df2[df2[celltype] == ct][condition].unique()) > 1:
-                pairs.append([(ct, condition_order[0]), (ct, condition_order[1])])
+        for s in split_order:
+            if len(df2[df2[split_by] == s][condition].unique()) > 1:
+                pairs.append([(s, condition_order[0]), (s, condition_order[1])])
+                if(len(condition_order) > 2):
+                    pairs.append([(s, condition_order[0]), (s, condition_order[2])])
+                    pairs.append([(s, condition_order[1]), (s, condition_order[2])])
 
-        subcat_order = hits
         hue_plot_params = {
             "data": df2,
-            "x": celltype,
+            "x": split_by,
             "y": "value",
-            "order": subcat_order,
-            "hue": "group",
+            "order": split_order,
+            "hue": condition,
             "hue_order": condition_order,
             # "palette": pal_group,
         }
@@ -650,14 +671,13 @@ def scis_prop(
             annotator.configure(test="Mann-Whitney", text_format="star")
             annotator.apply_and_annotate()
 
-            # When creating the legend, only use the first 2 elements
             handles, labels = ax.get_legend_handles_labels()
-            l = plt.legend(handles[0:2], labels[0:2], bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.0)
+            l = plt.legend(handles[0:len(condition_order)], labels[0:len(condition_order)], bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.0)
 
             ax.set_xticklabels(ax.get_xticklabels(), rotation=90, size=6)
             ax.set_yticklabels(ax.get_yticklabels(), size=6)
             ax.xaxis.grid(True)
             ax.yaxis.grid(True)
             ax.set(ylabel="")
-            ax.set_title("zone " + str(n))
+            ax.set_title(str(n))
             plt.tight_layout()
