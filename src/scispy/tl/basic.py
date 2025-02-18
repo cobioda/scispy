@@ -270,14 +270,14 @@ def prep_pseudobulk(
     return sdata2
 
 
-def run_pseudobulk(
+def pseudobulk(
     adata: an.AnnData,
     replicate: str,
-    condition: str,
-    cond_1: str,
-    cond_2: str,
-    groups_key: str = "celltype",
+    condition: str, # obv. need to be unique per replicate
+    conds: tuple = [],
+    groups_key: str = "scmusk",
     groups: tuple = [],
+    key_added: str = 'results',
     layer: str = "counts",
     min_cells: int = 5,
     top_volcano: int = 20,
@@ -286,7 +286,7 @@ def run_pseudobulk(
     lFCs_thr: int = 0.5,
     save: bool = False,
     save_prefix: str = "decoupler",
-    figsize: tuple = (16,3),
+    figsize: tuple = (8,3),
 ) -> pd.DataFrame:
     """Decoupler pydeseq2 pseudobulk handler.
 
@@ -294,18 +294,18 @@ def run_pseudobulk(
     ----------
     adata
         AnnData object.
-    cond_1
-        pseudobulk cond_1
-    cond_2
-        pseudobulk cond_2
-    condition
-        condition key
     replicate
         replicate key
+    condition
+        condition key
+    conds
+        list of the 2 conditions to compare
     groups_key
         sdata.table.obs key, i.e. cell types
     groups
         specify the cell types to work with
+    key_added
+        The key added to `adata.uns['scispy']` result is saved to.
     layer
         sdata.table count values layer
     min_cells
@@ -329,11 +329,12 @@ def run_pseudobulk(
     """
     # https://decoupler-py.readthedocs.io/en/latest/notebooks/pseudobulk.html
     # sns.set(font_scale=0.5)
-
-    adata = adata[adata.obs[condition].isin([cond_1, cond_2])].copy()
+    
+    conds.sort()
+    adconds = adata[adata.obs[condition].isin(conds)].copy()
 
     pdata = dc.get_pseudobulk(
-        adata,
+        adconds,
         sample_col=replicate,  # "pseudoname"
         groups_col=groups_key,  # celltype
         layer=layer,
@@ -341,10 +342,10 @@ def run_pseudobulk(
         min_cells=min_cells,
         min_counts=min_counts,
     )
-    # dc.plot_psbulk_samples(pdata, groupby=[pseudoname_key, groups_key], figsize=figsize)
+    # dc.plot_psbulk_samples(pdata, groupby=[replicate, groups_key], figsize=figsize)
 
     if groups is None:
-        groups = adata.obs[groups_key].cat.categories.tolist()
+        groups = adconds.obs[groups_key].cat.categories.tolist()
 
     df_total = pd.DataFrame()
     for ct in groups:
@@ -363,58 +364,50 @@ def run_pseudobulk(
                 dds = DeseqDataSet(
                     adata=sub,
                     design_factors=condition,
-                    ref_level=[condition, cond_1],
+                    ref_level=[condition, conds[1]],
                     refit_cooks=True,
                     quiet=True,
                 )
-                #print(len(sub.obs[replicate_key].unique().tolist()))
+
                 if len(sub.obs[replicate].unique().tolist()) > 2:
                     dds.deseq2()
-                    stat_res = DeseqStats(dds, contrast=[condition, cond_1, cond_2], quiet=True)
-
+                    stat_res = DeseqStats(dds, contrast=[condition, conds[1], conds[0]], quiet=True)
                     stat_res.summary()
-                    #coeff_str = cond_key + "_" + cond_2 + "_vs_" + cond_1
-                    #stat_res.lfc_shrink(coeff=coeff_str)
-
                     # might be cond_2
-                    stat_res.lfc_shrink(coeff=condition+"[T."+cond_1+"]")
-                    
+                    stat_res.lfc_shrink(coeff=condition+"[T."+conds[1]+"]")
                     results_df = stat_res.results_df
-
-                    fig, axs = plt.subplots(1, 2, figsize=figsize)
-                    dc.plot_volcano_df(results_df, x="log2FoldChange", y="padj", ax=axs[0], top=top_volcano)
-                    axs[0].set_title(ct + "("+cond_1+"-"+cond_2+")")
 
                     # sign_thr=0.05, lFCs_thr=0.5
                     results_df["pvals"] = -np.log10(results_df["padj"])
-
                     up_msk = (results_df["log2FoldChange"] >= lFCs_thr) & (results_df["pvals"] >= -np.log10(sign_thr))
                     dw_msk = (results_df["log2FoldChange"] <= -lFCs_thr) & (results_df["pvals"] >= -np.log10(sign_thr))
                     signs = results_df[up_msk | dw_msk].sort_values("pvals", ascending=False)
                     signs = signs.iloc[:top_volcano]
                     signs = signs.sort_values("log2FoldChange", ascending=False)
 
-                    # concatenate to total
-                    signs[groups_key] = ct
-                    df_total = pd.concat([df_total, signs.reset_index()])
-
                     if len(signs.index.tolist()) > 0:
+                        fig, axs = plt.subplots(1, 2, figsize=figsize)
+                        dc.plot_volcano_df(results_df, x="log2FoldChange", y="padj", ax=axs[0], top=top_volcano)
+                        axs[0].set_title(ct + "("+conds[1]+"-"+conds[0]+")")
                         sc.pp.normalize_total(sub)
                         sc.pp.log1p(sub)
                         sc.pp.scale(sub, max_value=10)
                         sc.pl.matrixplot(sub, signs.index, groupby=replicate, ax=axs[1])
+                        plt.tight_layout()
 
-                    plt.tight_layout()
+                        # concatenate to total
+                        signs[groups_key] = ct
+                        results_df[groups_key] = ct
+                        df_total = pd.concat([df_total, results_df.reset_index()])
 
-                    if save is True:
-                        results_df.to_csv(save_prefix + "_" + ct + ".csv")
-                        fig.savefig(save_prefix + "_" + ct + ".pdf", bbox_inches="tight")
-
-    if not df_total.empty:
-        if len(df_total[groups_key].unique()) > 2:
-            pd.pivot_table(df_total, values=["log2FoldChange"], index=["index"], columns=[groups_key], fill_value=0)
-
-    return df_total
+                        if save is True:
+                            results_df.to_csv(save_prefix + "_" + ct + ".csv")
+                            fig.savefig(save_prefix + "_" + ct + ".pdf", bbox_inches="tight")
+    
+    adata.uns["scispy"] = {}
+    adata.uns["scispy"][key_added] = df_total.reset_index(drop=True)
+    print("results stored in adata.uns['scispy']['",key_added,"']")
+    print("--> scis.pl.plot_pseudobulk(adata, key='",key_added,"')")
 
 
 def sdata_rotate(
@@ -583,13 +576,14 @@ def sdata_querybox(
 def scis_prop(
     adata: an.AnnData,
     group_by: str = "scmusk_T4",
-    group_only: str = "",
+    group_only: str = None,
     split_by: str = "anatomy",
     split_only: str = "",
     split_by_top: int = 5,
     replicate: str = "sample",
     condition: str = "group",
     condition_order: tuple = ["CTRL", "PAH"],  # might be possible to provide more conditions
+    test: str = "t-test_ind", #t-test_ind, t-test_welch, t-test_paired, Mann-Whitney, Mann-Whitney-gt, Mann-Whitney-ls, Levene, Wilcoxon, Kruskal, Brunner-Munzel
     figsize: tuple = (6, 3),
 ):
     """Compute per zone celltype proportion between 2 conditions using replicate for statistical testing
@@ -614,17 +608,22 @@ def scis_prop(
         condition key in adata.obs
     condition_order
         tuple of the x conditions to test
-    
+    test
+        statistical test to use
     figsize
         figure size
     Returns
     -------
 
     """
-    sns.set_theme(style="whitegrid", palette="pastel")
+
+    #print("group_by="+group_by)
+    #sns.set_theme(style="whitegrid", palette="pastel")
     l = list(adata.obs[group_by].unique())
-    if group_only:
+    if group_only is not None:
         l = [group_only]
+    
+    #print(l)
 
     for n in l:
         print(n)
@@ -668,7 +667,7 @@ def scis_prop(
             sns.stripplot(ax=ax, **hue_plot_params, dodge=True, edgecolor="black", linewidth=0.5, size=3)
 
             annotator = Annotator(ax, pairs, **hue_plot_params)
-            annotator.configure(test="Mann-Whitney", text_format="star")
+            annotator.configure(test=test, text_format="star")
             annotator.apply_and_annotate()
 
             handles, labels = ax.get_legend_handles_labels()
