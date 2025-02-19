@@ -8,15 +8,19 @@ from .basic import (
     scis_prop,
     sdata_querybox,
     sdata_rotate,
+    
 )
 
 from .shapes import (
     add_to_shapes,
     shapes_of_cell_type,
+    add_metadata_to_shape,
+    alpha_shape,
 )
 
 from .unfolding import (
     centerline,
+    shapeToImg,
 )
 
 __all__ = [
@@ -31,4 +35,7 @@ __all__ = [
     "scis_prop",
     "shapes_of_cell_type",
     "centerline",
+    "shapeToImg",
+    "add_metadata_to_shape",
+    "alpha_shape",
 ]
