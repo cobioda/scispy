@@ -1,7 +1,7 @@
 {
   "template": "https://github.com/scverse/cookiecutter-scverse",
-  "commit": "6a4338030e0c83a9034d607ed66abeff83e18840",
-  "checkout": null,
+  "commit": "87a407a65408d75a949c0b54b19fd287475a56f8",
+  "checkout": "v0.4.0",
   "context": {
     "cookiecutter": {
       "project_name": "scispy",
@@ -13,9 +13,15 @@
       "project_repo": "https://github.com/bfxomics/scispy",
       "license": "MIT License",
       "_copy_without_render": [
-        ".github/workflows/**.yaml",
+        ".github/workflows/build.yaml",
+        ".github/workflows/test.yaml",
         "docs/_templates/autosummary/**.rst"
       ],
+      "_render_devdocs": false,
+      "_jinja2_env_vars": {
+        "lstrip_blocks": true,
+        "trim_blocks": true
+      },
       "_template": "https://github.com/scverse/cookiecutter-scverse"
     }
   },

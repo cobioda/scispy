@@ -18,6 +18,7 @@ from shapely.geometry import Polygon
 from spatialdata import SpatialData
 from spatialdata.models import PointsModel, ShapesModel
 from spatialdata.transformations import Affine, Identity, Translation, set_transformation
+from statannotations.Annotator import Annotator
 
 
 def add_shapes_from_hdf5(
@@ -269,22 +270,23 @@ def prep_pseudobulk(
     return sdata2
 
 
-def run_pseudobulk(
+def pseudobulk(
     adata: an.AnnData,
-    pseudotype_1: str,
-    pseudotype_2: str,
-    pseudotype_key: str = "pseudotype",
-    pseudoname_key: str = "pseudoname",
-    groups_key: str = "celltype",
+    replicate: str,
+    condition: str, # obv. need to be unique per replicate
+    conds: tuple = [],
+    groups_key: str = "scmusk",
     groups: tuple = [],
+    key_added: str = 'results',
     layer: str = "counts",
     min_cells: int = 5,
+    top_volcano: int = 20,
     min_counts: int = 200,
     sign_thr: float = 0.05,
     lFCs_thr: int = 0.5,
     save: bool = False,
     save_prefix: str = "decoupler",
-    figsize: tuple = (10, 4),
+    figsize: tuple = (8,3),
 ) -> pd.DataFrame:
     """Decoupler pydeseq2 pseudobulk handler.
 
@@ -292,18 +294,18 @@ def run_pseudobulk(
     ----------
     adata
         AnnData object.
-    pseudotype_1
-        pseudobulk condition (pseudotype) 1
-    pseudotype_2
-        pseudobulk condition (pseudotype) 2
-    pseudotype_key
-        sdata.table.obs key, i.e. condition
-    pseudoname_key
-        sdata.table.obs key, i.e. replicate name
+    replicate
+        replicate key
+    condition
+        condition key
+    conds
+        list of the 2 conditions to compare
     groups_key
         sdata.table.obs key, i.e. cell types
     groups
         specify the cell types to work with
+    key_added
+        The key added to `adata.uns['scispy']` result is saved to.
     layer
         sdata.table count values layer
     min_cells
@@ -327,92 +329,85 @@ def run_pseudobulk(
     """
     # https://decoupler-py.readthedocs.io/en/latest/notebooks/pseudobulk.html
     # sns.set(font_scale=0.5)
-
-    adata = adata[adata.obs[pseudotype_key].isin([pseudotype_1, pseudotype_2])].copy()
+    
+    conds.sort()
+    adconds = adata[adata.obs[condition].isin(conds)].copy()
 
     pdata = dc.get_pseudobulk(
-        adata,
-        sample_col=pseudoname_key,  # "pseudoname"
+        adconds,
+        sample_col=replicate,  # "pseudoname"
         groups_col=groups_key,  # celltype
         layer=layer,
         mode="sum",
         min_cells=min_cells,
         min_counts=min_counts,
     )
-    # dc.plot_psbulk_samples(pdata, groupby=[pseudoname_key, groups_key], figsize=figsize)
+    # dc.plot_psbulk_samples(pdata, groupby=[replicate, groups_key], figsize=figsize)
 
     if groups is None:
-        groups = adata.obs[groups_key].cat.categories.tolist()
+        groups = adconds.obs[groups_key].cat.categories.tolist()
 
     df_total = pd.DataFrame()
     for ct in groups:
+        print(ct)
+        
         sub = pdata[pdata.obs[groups_key] == ct].copy()
 
-        if len(sub.obs[pseudotype_key].to_list()) > 1:
+        if len(sub.obs[condition].to_list()) > 1:
             # Obtain genes that pass the thresholds
-            genes = dc.filter_by_expr(sub, group=pseudotype_key, min_count=5, min_total_count=5)
+            genes = dc.filter_by_expr(sub, group=condition, min_count=5, min_total_count=5)
             # Filter by these genes
             sub = sub[:, genes].copy()
 
-            if len(sub.obs[pseudotype_key].unique().tolist()) > 1:
+            if len(sub.obs[condition].unique().tolist()) > 1:
                 # Build DESeq2 object
                 dds = DeseqDataSet(
                     adata=sub,
-                    design_factors=pseudotype_key,
-                    ref_level=[pseudotype_key, pseudotype_1],
+                    design_factors=condition,
+                    ref_level=[condition, conds[1]],
                     refit_cooks=True,
                     quiet=True,
                 )
-                dds.deseq2()
-                stat_res = DeseqStats(dds, contrast=[pseudotype_key, pseudotype_1, pseudotype_2], quiet=True)
 
-                stat_res.summary()
-                coeff_str = pseudotype_key + "_" + pseudotype_2 + "_vs_" + pseudotype_1
-                stat_res.lfc_shrink(coeff=coeff_str)
+                if len(sub.obs[replicate].unique().tolist()) > 2:
+                    dds.deseq2()
+                    stat_res = DeseqStats(dds, contrast=[condition, conds[1], conds[0]], quiet=True)
+                    stat_res.summary()
+                    # might be cond_2
+                    stat_res.lfc_shrink(coeff=condition+"[T."+conds[1]+"]")
+                    results_df = stat_res.results_df
 
-                results_df = stat_res.results_df
+                    # sign_thr=0.05, lFCs_thr=0.5
+                    results_df["pvals"] = -np.log10(results_df["padj"])
+                    up_msk = (results_df["log2FoldChange"] >= lFCs_thr) & (results_df["pvals"] >= -np.log10(sign_thr))
+                    dw_msk = (results_df["log2FoldChange"] <= -lFCs_thr) & (results_df["pvals"] >= -np.log10(sign_thr))
+                    signs = results_df[up_msk | dw_msk].sort_values("pvals", ascending=False)
+                    signs = signs.iloc[:top_volcano]
+                    signs = signs.sort_values("log2FoldChange", ascending=False)
 
-                fig, axs = plt.subplots(1, 2, figsize=figsize)
-                dc.plot_volcano_df(results_df, x="log2FoldChange", y="padj", ax=axs[0], top=20)
-                axs[0].set_title(ct)
+                    if len(signs.index.tolist()) > 0:
+                        fig, axs = plt.subplots(1, 2, figsize=figsize)
+                        dc.plot_volcano_df(results_df, x="log2FoldChange", y="padj", ax=axs[0], top=top_volcano)
+                        axs[0].set_title(ct + "("+conds[1]+"-"+conds[0]+")")
+                        sc.pp.normalize_total(sub)
+                        sc.pp.log1p(sub)
+                        sc.pp.scale(sub, max_value=10)
+                        sc.pl.matrixplot(sub, signs.index, groupby=replicate, ax=axs[1])
+                        plt.tight_layout()
 
-                # sign_thr=0.05, lFCs_thr=0.5
-                results_df["pvals"] = -np.log10(results_df["padj"])
+                        # concatenate to total
+                        signs[groups_key] = ct
+                        results_df[groups_key] = ct
+                        df_total = pd.concat([df_total, results_df.reset_index()])
 
-                up_msk = (results_df["log2FoldChange"] >= lFCs_thr) & (results_df["pvals"] >= -np.log10(sign_thr))
-                dw_msk = (results_df["log2FoldChange"] <= -lFCs_thr) & (results_df["pvals"] >= -np.log10(sign_thr))
-                signs = results_df[up_msk | dw_msk].sort_values("pvals", ascending=False)
-                signs = signs.iloc[:20]
-                signs = signs.sort_values("log2FoldChange", ascending=False)
-
-                # concatenate to total
-                signs[groups_key] = ct
-                df_total = pd.concat([df_total, signs.reset_index()])
-
-                if len(signs.index.tolist()) > 0:
-                    sc.pp.normalize_total(sub)
-                    sc.pp.log1p(sub)
-                    sc.pp.scale(sub, max_value=10)
-                    sc.pl.matrixplot(sub, signs.index, groupby=pseudoname_key, ax=axs[1])
-
-                plt.tight_layout()
-
-                if save is True:
-                    results_df.to_csv(save_prefix + "_" + ct + ".csv")
-                    fig.savefig(save_prefix + "_" + ct + ".pdf", bbox_inches="tight")
-
-    if len(df_total[groups_key].unique()) > 2:
-        pivlfc = pd.pivot_table(
-            df_total, values=["log2FoldChange"], index=["index"], columns=[groups_key], fill_value=0
-        )
-        #    pd.pivot_table(df_total, values=["pvals"], index=["index"], columns=[groups_col], fill_value=0)
-        #    ## plot pivot table as heatmap using seaborn
-        sns.clustermap(pivlfc, cmap="vlag", figsize=(6, 6))
-    #    ## plt.setp( ax.xaxis.get_majorticklabels(), rotation=90)
-    #    # plt.tight_layout()
-    #    # plt.show()
-
-    return df_total
+                        if save is True:
+                            results_df.to_csv(save_prefix + "_" + ct + ".csv")
+                            fig.savefig(save_prefix + "_" + ct + ".pdf", bbox_inches="tight")
+    
+    adata.uns["scispy"] = {}
+    adata.uns["scispy"][key_added] = df_total.reset_index(drop=True)
+    print("results stored in adata.uns['scispy']['",key_added,"']")
+    print("--> scis.pl.plot_pseudobulk(adata, key='",key_added,"')")
 
 
 def sdata_rotate(
@@ -576,3 +571,112 @@ def sdata_querybox(
 
     else:
         return sdata_crop
+
+
+def scis_prop(
+    adata: an.AnnData,
+    group_by: str = "scmusk_T4",
+    group_only: str = None,
+    split_by: str = "anatomy",
+    split_only: str = "",
+    split_by_top: int = 5,
+    replicate: str = "sample",
+    condition: str = "group",
+    condition_order: tuple = ["CTRL", "PAH"],  # might be possible to provide more conditions
+    test: str = "t-test_ind", #t-test_ind, t-test_welch, t-test_paired, Mann-Whitney, Mann-Whitney-gt, Mann-Whitney-ls, Levene, Wilcoxon, Kruskal, Brunner-Munzel
+    figsize: tuple = (6, 3),
+):
+    """Compute per zone celltype proportion between 2 conditions using replicate for statistical testing
+
+    Parameters
+    ----------
+    adata
+        AnnData object.
+    group_by
+        group
+    group_only
+        just plot this group
+    split_by
+        x value split_by
+    split_only
+        focus on this split_by
+    split_by_top
+        top split_by to consider
+    replicate
+        replicate key in adata.obs
+    condition
+        condition key in adata.obs
+    condition_order
+        tuple of the x conditions to test
+    test
+        statistical test to use
+    figsize
+        figure size
+    Returns
+    -------
+
+    """
+
+    #print("group_by="+group_by)
+    #sns.set_theme(style="whitegrid", palette="pastel")
+    l = list(adata.obs[group_by].unique())
+    if group_only is not None:
+        l = [group_only]
+    
+    #print(l)
+
+    for n in l:
+        print(n)
+        df = adata[adata.obs[group_by] == n].obs[[replicate, condition, split_by]]
+        df2 = df.groupby([replicate, condition, split_by])[split_by].count().unstack()
+        df2 = df2.div(df2.sum(axis=1), axis=0).reset_index()
+        df2 = df2.melt(id_vars=[replicate, condition])
+        df2 = df2.dropna()
+        df2 = df2[df2.value > 0]
+        
+        hits = list(df[split_by].value_counts().head(split_by_top).keys())
+        df2 = df2[df2[split_by].isin(hits)]
+
+        if split_only:
+            df2 = df2[df2[split_by] == split_only]
+            hits = [split_only]
+
+        split_order = hits
+
+        pairs = []
+        for s in split_order:
+            if len(df2[df2[split_by] == s][condition].unique()) > 1:
+                pairs.append([(s, condition_order[0]), (s, condition_order[1])])
+                if(len(condition_order) > 2):
+                    pairs.append([(s, condition_order[0]), (s, condition_order[2])])
+                    pairs.append([(s, condition_order[1]), (s, condition_order[2])])
+
+        hue_plot_params = {
+            "data": df2,
+            "x": split_by,
+            "y": "value",
+            "order": split_order,
+            "hue": condition,
+            "hue_order": condition_order,
+            # "palette": pal_group,
+        }
+
+        if len(pairs) > 0:
+            fig, ax = plt.subplots(1, 1, figsize=figsize)
+            sns.boxplot(ax=ax, **hue_plot_params, boxprops={"alpha": 0.8}, showfliers=False, linewidth=0.5)
+            sns.stripplot(ax=ax, **hue_plot_params, dodge=True, edgecolor="black", linewidth=0.5, size=3)
+
+            annotator = Annotator(ax, pairs, **hue_plot_params)
+            annotator.configure(test=test, text_format="star")
+            annotator.apply_and_annotate()
+
+            handles, labels = ax.get_legend_handles_labels()
+            l = plt.legend(handles[0:len(condition_order)], labels[0:len(condition_order)], bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.0)
+
+            ax.set_xticklabels(ax.get_xticklabels(), rotation=90, size=6)
+            ax.set_yticklabels(ax.get_yticklabels(), size=6)
+            ax.xaxis.grid(True)
+            ax.yaxis.grid(True)
+            ax.set(ylabel="")
+            ax.set_title(str(n))
+            plt.tight_layout()

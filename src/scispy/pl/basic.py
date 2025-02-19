@@ -3,9 +3,10 @@ import pandas as pd
 import scanpy as sc
 import seaborn as sns
 import spatialdata as sd
-import squidpy as sq
+import anndata as ad
 from matplotlib import pyplot as plt
 from spatialdata import SpatialData
+import spatialdata_plot
 
 from scispy.tl.basic import sdata_rotate
 
@@ -255,11 +256,12 @@ def plot_sdata(
         color key from .table.obs
     """
     if shape_keys is None:
-        shape_keys = list(sdata.shapes.keys())  # better would be to get the list of spatialdata_attrs 'cell_regions'
+        shape_keys = sdata.table.uns['spatialdata_attrs']['region']
+        #shape_keys = list(sdata.shapes.keys())  # better would be to get the list of spatialdata_attrs 'cell_regions'
     if feature_key is None:
         feature_key = sdata.tables[list(sdata.tables.keys())[0]].uns["spatialdata_attrs"]["feature_key"]
 
-    args_shapes = {"elements": shape_keys, "color": color_key}
+    args_shapes = {"element": shape_keys, "method": "matplotlib", "color": color_key}
     args_points = {"size": point_size, "color": feature_key}
 
     # size=0.01, linewidth=None, marker=".", edgecolor = 'none', markeredgewidth=0.0
@@ -332,13 +334,14 @@ def plot_multi_sdata(
     ax1.set_title("anndata.obs coordinates")
     ax1.invert_yaxis()
 
-    sdata.pl.render_shapes(elements=sdata.table.uns["spatialdata_attrs"]["region"], color=color_key).pl.show(ax=ax2)
+    sdata.pl.render_shapes(element=sdata.table.uns["spatialdata_attrs"]["region"][0], color=color_key).pl.show(ax=ax2)
     ax2.get_legend().remove()
     ax2.set_title("spatialdata polygons")
 
-    sq.pl.spatial_scatter(sdata.table, color=color_key, shape=None, size=1, ax=ax3)
-    # ax2.get_legend().remove()
-    ax3.set_title("squidpy spatial")
+    sc.pl.embedding(sdata.table, "spatial", color=color_key, size=1, ax=ax3)
+    #sq.pl.spatial_scatter(sdata.table, basis='spatial', color=color_key, shape=None, size=1, ax=ax3)
+    #ax2.get_legend().remove()
+    #ax3.set_title("squidpy spatial")
 
     plt.tight_layout()
 
@@ -371,73 +374,77 @@ def get_palette(color_key: str) -> dict:
             "olfactory epithelium": "#344966",
             "migrating neuron": "#606c38",
         }
-    elif color_key == "celltype":
+    elif color_key == "HTAP":
         palette = {
             # htap
-            "Basal": "#7209b7",
-            "Multiciliated": "#b5179e",
-            "Neuroendocrine": "#d0d1ff",
-            "Secretory": "#9d4edd",
-            "AT0": "#e0aaff",
-            "AT2": "#6a4c93",
-            "AT1": "#4d194d",
-            "Lymphatic": "#124e78",
-            "aCap": "#00bbf9",
-            "gCap": "#0466c8",
-            "ArtEC": "#6096ba",
-            "VeinEC": "#657ed4",
-            "AlvMacro": "#ffd29d",
-            "Dendritic": "#d6ce93",
-            "Monocyte": "#b1cc74",
-            "InterMacro": "#38b000",
-            "CD4": "#7c6a0a",
-            "CD8": "#bcbd8b",
-            "NK": "#e8fcc2",
-            "Mast": "#4f6d7a",
-            "Plasma": "#829399",
-            "B": "#fffbbd",
-            "Megak": "#006400",
-            "Pericyte": "#9c6644",
-            "Pericytes": "#9c6644",
-            "SMC": "#d81159",
-            "AdvFibro": "#ef6351",
-            "AlvFibro": "#d58936",
-            "MyoFibro": "#69140e",
+            "AT2": "#3E8F91",
+            "AT1": "#6F5D85",
+            "Basal": "#E41A1C",
+            "Multiciliated": "#1f618d",
+            "Pre-TB secretory": "#3b683f",
+            "Secretory": "#E6AB02",
+            "AT0": "#BA6866",
+            "AT1-AT2": "#F2920D",
+            "Rare": "#DF8CC4",
+            "EC general capillary": "#4EA2D7",
+            "Plasma cells": "#78281f",
+            "EC venous pulmonary": "#1E6275",
+            "EC venous systemic": "#2FA679",
+            "EC aerocyte capillary": "#95D286",
+            "Lymphatic EC": "#2d7687",
+            "EC arterial": "#C9CE46",
+            "Smooth muscle": "#ec7063",
+            "Alveolar fibroblasts": "#af801d",
+            "Adventitial fibroblasts": "#D6217C",
+            "Myofibroblasts": "#426F8E",
+            "Pericytes": "#7b241c",
+            "Mast cells": "#F79F80",
+            "Alveolar macrophages": "#BC6399",
+            "C1Q+ macrophages": "#B22070",
+            "CD4 T cells": "#674A9C",
+            "CD8 T cells": "#79838A",
+            "B cells": "#668C61",
+            "NK cells": "#8AA20A",
+            "Monocytes": "#D1DC1F",
+            "DC": "#AB674F",
+            "Interstitial Mph perivascular": "#ff00a2",
+            "Megakaryocytes": "#d68a1c",
         }
-    elif color_key == "celltype paolo":
+    elif color_key == "paolo":
         # paolo
         palette = {
-            "Early OSNs": "#18DED2",
-            "Sustentaculars": "#C09ACA",
-            "HBCs": "#E41A1C",
-            "GBCs": "#F48B5A",
-            "Precursors": "#706fd3",
-            "Duct/MUC": "#efe13c",
-            "Multiciliated": "#1f618d",
-            "Deuterosomal": "#3498db",
-            "GnRH neurons": "#E00EF1",
-            "Migratory neurons": "#457b9d",
-            "Neuron progenitors": "#6A0B78",
-            "Excitatory neurons": "#61559E",
-            "Inhibitory neurons": "#800EF1",
-            "Neurons ALK+": "#95819F",
-            "VNO neurons": "#0D16C8",
-            "junk neurons": "#f1faee",
-            "Olf. ensh. glia": "#AE8C0D",
-            "Glia progenitors": "#E3D9AC",
-            "Schwann cells": "#C0AC51",
-            "Myeloid": "#736376",
-            "Microglia": "#91BFB7",
-            "Vascular EC": "#E788C2",
-            "Lymphatic EC": "#F78896",
-            "Satellites": "#CB7647",
-            "Skeletal muscle": "#926B54",
+            "Cartilages": "#0B4B19",
             "Stromal0": "#99D6A9",
             "Stromal1": "#1B8F76",
             "Stromal2": "#9DAF07",
-            "Stromal3": "#4CAD4C",
+            "Osteoblasts": "#4CAD4C",
+            "Lymphatic EC": "#F78896",
+            "Vascular EC": "#E788C2",
             "Pericytes": "#BBD870",
-            "Cartilages": "#0B4B19",
+            "Satellites": "#CB7647",
+            "Skeletal muscle": "#926B54",
+            "Neural crest": "#E3D9AC",
+            "Olf. ensh. glia": "#cd6889",
+            "Glia progenitors": "#FF4500",
+            "ALK neurons": "#95819F",
+            "Olfactory HBCs": "#E41A1C",
+            "Respiratory HBCs": "#C82C73",
+            "Cycling HBCs": "#C2A523",
+            "Tufts": "#eb10fd",
+            "Duct": "#efe13c",
+            "Multiciliated": "#1f618d",
+            "Deuterosomal": "#3498db",
+            "Sustentaculars": "#C09ACA",
+            "GBCs": "#F48B5A",
+            "OSN precursors": "#E69F00",
+            "iOSNs": "#f05b43",
+            "mOSNs": "#33b8ff",
+            "Neural progenitors": "#6A0B78",
+            "Excitatory neurons": "#706fd3",
+            "Inhibitory neurons": "#800EF1",
+            "GnRH neurons": "#2EECDB",
+            "Myeloid": "#736376",
+            "Microglia": "#91BFB7",
         }
     elif color_key == "population paolo":
         palette = {
@@ -539,15 +546,18 @@ def plot_per_groups(adata, clust_key, size=60, is_spatial=False, frameon=False, 
     else:
         # not working !....
         tmp.uns["spatial"] = tmp.obsm["spatial"]
-        sq.pl.spatial_scatter(
-            tmp,
-            groups=tmp.obs[clust].cat.categories[1:].values,
-            color=adata.obs[clust_key].cat.categories.tolist(),
-            size=size,
-            frameon=frameon,
-            legend_loc=legend_loc,
-            **kwargs,
-        )
+        
+        #sc.pl.embedding(sdata.table, "spatial", color=key, size=1, ax=axs[1])
+        
+        #sq.pl.spatial_scatter(
+        #    tmp,
+        #    groups=tmp.obs[clust].cat.categories[1:].values,
+        #    color=adata.obs[clust_key].cat.categories.tolist(),
+        #    size=size,
+        #    frameon=frameon,
+        #    legend_loc=legend_loc,
+        #    **kwargs,
+        #)
 
 
 def legend_without_duplicate_labels(figure):
@@ -564,3 +574,74 @@ def legend_without_duplicate_labels(figure):
     handles, labels = plt.gca().get_legend_handles_labels()
     by_label = dict(zip(labels, handles))
     figure.legend(by_label.values(), by_label.keys(), loc="center left", bbox_to_anchor=(1.05, 0.5), fontsize=6, ncol=1)
+
+
+def plot_pseudobulk(
+    adata: ad.AnnData,
+    x_key: str = 'scmusk',
+    y_key: str = 'log2FoldChange',
+    key: str = 'results',
+    padj: float = 0.05,
+    log2FoldChange: float = 1,
+    figsize: tuple = (8,3),
+    save: bool = False,
+    save_format: str = 'pdf',
+):
+    """Plot DEG dataframe from pseudobulk analysis
+
+    Parameters
+    ----------
+    adata
+        anndata object
+    x_key
+        x key
+    y_key
+        y key
+    key
+        key in adata.uns['scispy'] storing the results to plot
+    padj
+        p adjusted to be significant
+    log2FoldChange
+        log2FoldChange to be significant
+    figsize
+        figure size
+    save
+        wether or not to save the figure
+    save_format
+        pdf or png
+    """
+    df = adata.uns['scispy'][key].copy()
+
+    df['significative'] = 0
+    df.loc[df.padj < padj, 'significative'] = 1
+    df.loc[abs(df.log2FoldChange) < log2FoldChange, 'significative'] = 0
+
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    tmp = df[df.significative==1]
+    tmp = tmp.reset_index(drop=True)
+    order = list(tmp.groupby([x_key]).groups.keys())
+
+    sns.stripplot(data=tmp, x=x_key, y=y_key, hue=x_key, 
+                orient='v', palette="deep", order=order, alpha=0.6, size=5, linewidth=1, edgecolor='black', jitter=0.4)
+
+    grouped = tmp.groupby([x_key])
+    # Label the points within each group
+    for collection, (group_key, group_data) in zip(ax.collections, grouped):
+        for i, (x, y) in enumerate(collection.get_offsets()):
+            y_value = group_data.iloc[i]['index']
+            ax.text(x, y+0.1, y_value, ha='left', va='bottom', color='grey', size='x-small')
+
+    tmp = df[df.significative==0]
+    sns.stripplot(data=tmp, x=x_key, y=y_key, color="grey", 
+                orient='v', alpha=0.6, size=2, jitter=0.4)
+
+    ax.tick_params(axis='x', rotation=90)
+    
+    # save figure
+    if save is True:
+        if save_format == "pdf":
+            print("saving plot_pseudobulk.pdf")
+            plt.savefig("plot_pseudobulk.pdf", bbox_inches="tight")
+        elif save_format == "png":
+            print("saving plot_pseudobulk.png")
+            plt.savefig("plot_pseudobulk.png", dpi=300, bbox_inches="tight")
