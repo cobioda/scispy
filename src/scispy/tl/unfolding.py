@@ -59,9 +59,15 @@ def order_points(
     dist_matrix, 
     start=0
 ) -> list:
-    """
-    Function to find the TSP path
-    
+    """Function to find the TSP path
+
+
+    Args:
+        dist_matrix (_type_): _description_
+        start (int, optional): _description_. Defaults to 0.
+
+    Returns:
+        list: _description_
     """
     n_points = len(dist_matrix) # dist_matrix.shape[0]
     ordered_points = [start]
@@ -96,7 +102,16 @@ def sortedCentroidToLine(
     length_max: int = 5,
 ) -> shapely.LineString:
     """Re order the points of all the centroids to have a 
-    linestring without crossing paths"""
+    linestring without crossing paths
+
+    Args:
+        polygone (shapely.Polygon): _description_
+        centroids (_type_): _description_
+        length_max (int, optional): _description_. Defaults to 5.
+
+    Returns:
+        shapely.LineString: _description_
+    """
     n = len(centroids)
     min_dist = float('inf')
     # min_order = []
@@ -135,12 +150,23 @@ def sortedCentroidToLine(
 
 
 def addPoints(
-    polygone, 
-    line, 
-    dict_position = {'Start': [0,1], 
-                     'End': [-1,-2]}, 
-    distance = 5000
-):
+    polygon: shapely.Polygon, 
+    line: shapely.LineString, 
+    dict_position: dict = {'Start': [0,1], 
+                           'End': [-1,-2]}, 
+    distance: int= 5000
+) -> shapely.LineString:
+    """
+
+    Parameters:
+        polygon (shapely.Polygon): _description_
+        line (shapely.LineString): _description_
+        dict_position (_type_, optional): _description_. Defaults to {'Start': [0,1], 'End': [-1,-2]}.
+        distance (int, optional): _description_. Defaults to 5000.
+
+    Returns:
+        shapely.LineString: _description_
+    """
     points = {}
     order_centers = shapely.get_coordinates(line)
 
@@ -148,7 +174,7 @@ def addPoints(
         print(f'Add point at the {loc} position : {pos}')
         extendedLine = extendLine(order_centers[pos[0], :], 
                                   order_centers[pos[1], :], distance)
-        touch_bound = shapely.get_coordinates(polygone.boundary.intersection(extendedLine))
+        touch_bound = shapely.get_coordinates(polygon.boundary.intersection(extendedLine))
 
         if len(touch_bound) > 1 :
             min_dist = float('inf')
@@ -165,18 +191,15 @@ def addPoints(
 
     lineFinal = shapely.LineString(
         np.vstack([points['Start'], order_centers, points['End']]))
-        # np.row_stack([points['Start'], order_centers, points['End']]))
-
     return lineFinal
 
 
 def extendLine(
-    point1, 
-    point2, 
-    distance
+    point1: shapely.Point, 
+    point2: shapely.Point, 
+    distance: int = 5000,
 ) -> shapely.LineString:
-    """
-    Extend a line segment formed by two points by a given distance.
+    """    Extend a line segment formed by two points by a given distance.
 
     Parameters
     ----------
@@ -207,12 +230,21 @@ def extendLine(
 
 
 def get_angle(
-    p1, 
-    p2, 
-    p3, 
-    degree = True
-): 
-    """ Calculate angle between 2 points
+    p1: shapely.Point, 
+    p2: shapely.Point, 
+    p3: shapely.Point, 
+    degree: bool = True,
+) -> float: 
+    """Calculate angle between 2 points
+
+    Args:
+        p1 (shapely.Point): _description_
+        p2 (shapely.Point): _description_
+        p3 (shapely.Point): _description_
+        degree (bool, optional): _description_. Defaults to True.
+
+    Returns:
+        float: _description_
     """
     vec1 = p1 - p2
     vec2 = p3 - p2
@@ -238,9 +270,20 @@ def centerline(
     # max_clusters = 100,
 ) -> shapely.LineString:
     """Compute the centerline
-    
-    
+
+    Args:
+        polygon (shapely.Polygon): _description_
+        n_clusters (int, optional): _description_. Defaults to 3.
+        distance (int, optional): _description_. Defaults to 5000.
+        length_max (int, optional): _description_. Defaults to 5.
+        random_state (int, optional): _description_. Defaults to 130.
+        img_val (_type_, optional): _description_. Defaults to None.
+        threshold (int, optional): _description_. Defaults to 120.
+
+    Returns:
+        shapely.LineString: _description_
     """
+ 
     if img_val is None :
         img_val = shapeToImg(polygon=polygon)
     print("===========================================")
