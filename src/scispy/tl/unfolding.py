@@ -97,7 +97,7 @@ def order_points(
 
 
 def sortedCentroidToLine(
-    polygone: shapely.Polygon, 
+    polygon: shapely.Polygon, 
     centroids,
     length_max: int = 5,
 ) -> shapely.LineString:
@@ -105,7 +105,7 @@ def sortedCentroidToLine(
     linestring without crossing paths
 
     Args:
-        polygone (shapely.Polygon): _description_
+        polygon (shapely.Polygon): _description_
         centroids (_type_): _description_
         length_max (int, optional): _description_. Defaults to 5.
 
@@ -122,11 +122,11 @@ def sortedCentroidToLine(
     for i in range(n):
         for j in range(i+1, n):
             line = shapely.LineString([centroids[i], centroids[j]])
-            # if polygone.boundary.intersects(line):
+            # if polygon.boundary.intersects(line):
             #     dist_matrix[i, j] = float('inf')
             #      dist_matrix[j, i] = float('inf')
-            if polygone.boundary.intersects(line):
-                if line.difference(polygone).length > length_max:
+            if polygon.boundary.intersects(line):
+                if line.difference(polygon).length > length_max:
                     # warnings.warn(f'Lline unauthorized, line intersects polygon and the length is > {length_max}') 
                     dist_matrix[i, j] = float('inf')
                     dist_matrix[j, i] = float('inf')
@@ -338,6 +338,6 @@ def centerline(
             print("No line...")
             n_clusters += 1
            
-    lineFinal = addPoints(polygone = polygon, 
+    lineFinal = addPoints(polygon = polygon, 
                             line = lineK_Order, distance = distance)
     return lineFinal
