@@ -8,7 +8,8 @@ from .basic import (
     scis_prop,
     sdata_querybox,
     sdata_rotate,
-    
+    df_for_genes,
+    fromAxisMedialToDf,
 )
 
 from .shapes import (
@@ -38,4 +39,6 @@ __all__ = [
     "shapeToImg",
     "add_metadata_to_shape",
     "alpha_shape",
+    "df_for_genes",
+    "fromAxisMedialToDf",
 ]
