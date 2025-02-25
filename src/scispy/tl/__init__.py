@@ -10,6 +10,7 @@ from .basic import (
     sdata_rotate,
     df_for_genes,
     fromAxisMedialToDf,
+    orthogonalDistance,
 )
 
 from .shapes import (
@@ -41,4 +42,5 @@ __all__ = [
     "alpha_shape",
     "df_for_genes",
     "fromAxisMedialToDf",
+    "orthogonalDistance",
 ]

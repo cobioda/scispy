@@ -20,6 +20,7 @@ from spatialdata.models import PointsModel, ShapesModel
 from spatialdata.transformations import Affine, Identity, Translation, set_transformation
 from statannotations.Annotator import Annotator
 import shapely
+from unfolding import extendLine
 
 def add_shapes_from_hdf5(
     sdata: sd.SpatialData = None,
@@ -815,3 +816,65 @@ def find_polygon(geometry, up, down):
         return 2
     else:
         return 0
+    
+    
+
+def orthogonalDistance(
+    data: pd.DataFrame | gpd.GeoDataFrame,
+    # sdata: sd.SpatialData,
+    polygon: shapely.Polygon, 
+    centerline: shapely.LineString,
+    # shape_key: str = 'cell_boundaries',
+    group_by: str | None = None,
+    distance: int = 30,
+    round: int = 3,
+) -> gpd.GeoDataFrame:  
+    """Normalize the distance by following the othogonal axis
+
+    Args:
+        data (pd.DataFrame | gpd.GeoDataFrame): _description_
+        polygon (shapely.Polygon): _description_
+        centerline (shapely.LineString): _description_
+        group_by (str | None, optional): _description_. Defaults to None.
+        distance (int, optional): _description_. Defaults to 30.
+        round (int, optional): _description_. Defaults to 3.
+
+    Returns:
+        gpd.GeoDataFrame: _description_
+    """
+
+    df_compute = data.copy()
+    if not isinstance(df_compute, gpd.GeoDataFrame):
+        df_compute = gpd.GeoDataFrame(df_compute, geometry=gpd.points_from_xy(df_compute['x'], df_compute['y']))
+
+    if len(shapely.ops.split(polygon, centerline).geoms) == 1 :
+        print('Extend line...')
+        order_centers= shapely.get_coordinates(centerline)
+        extendedLine_start = extendLine(order_centers[0, :], 
+                                        order_centers[1, :], distance=distance)
+        extendedLine_end = extendLine(order_centers[-1, :], 
+                                        order_centers[-2, :], distance=distance)
+        lineFinal = shapely.LineString(np.vstack([shapely.get_coordinates(extendedLine_start)[0], 
+                                                order_centers,
+                                                shapely.get_coordinates(extendedLine_end)[0]]))
+        split_shapes = shapely.ops.split(polygon, lineFinal)
+        
+    if len(split_shapes.geoms) == 2:
+        up_shape = split_shapes.geoms[0]
+        down_shape = split_shapes.geoms[1]
+    else:
+        print(len(split_shapes.geoms))
+        print("Increase distance")
+        return
+    
+    df_compute['distance_pts_line'] = df_compute.distance(centerline)
+    gdf_polygons = gpd.GeoDataFrame({'cat_layers': [1, 2]}, geometry=[up_shape, down_shape])
+    df_compute = gpd.sjoin(df_compute, gdf_polygons, predicate="intersects", how="left")
+    # type(df_trans_sub) # geopandas.geodataframe.GeoDataFrame
+
+    df_compute.loc[df_compute['cat_layers'] == 1, 'distance_pts_line'] *= -1
+    df_compute['distance_pts_line'] -= df_compute['distance_pts_line'].min()
+    # print(df_compute['distance_pts_line'].min())
+    df_compute['distance_normalize']  = (df_compute['distance_pts_line'] / df_compute['distance_pts_line'].max()).round(round)
+    
+    return df_compute
