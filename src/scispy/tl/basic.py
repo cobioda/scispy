@@ -19,7 +19,8 @@ from spatialdata import SpatialData
 from spatialdata.models import PointsModel, ShapesModel
 from spatialdata.transformations import Affine, Identity, Translation, set_transformation
 from statannotations.Annotator import Annotator
-
+import shapely
+from ..tl.unfolding import extendLine
 
 def add_shapes_from_hdf5(
     sdata: sd.SpatialData = None,
@@ -680,3 +681,200 @@ def scis_prop(
             ax.set(ylabel="")
             ax.set_title(str(n))
             plt.tight_layout()
+
+
+def fromAxisMedialToDf(
+    sdata: sd.SpatialData,
+    axisMedial: shapely.LineString,
+    nb_interval: int = 10,
+    shape_key: str = 'cell_boundaries',
+    group_by: str = "cell_type_pred",
+    # group_lst: '[]|None' = None,
+    # scale_factor: float = 1/0.2125, # because xenium in microns and sdata in global
+    return_df: bool = False,
+):
+    """Compute 'nb_interval' regular intervals along the centerline
+
+    Parameters
+    ----------        
+    sdata (sd.SpatialData): _description_
+    axisMedial (shapely.LineString): _description_
+    nb_interval (int, optional): _description_. Defaults to 10.
+    shape_key (str, optional): _description_. Defaults to 'cell_boundaries'.
+    group_by (str, optional): _description_. Defaults to "cell_type_pred".
+    scale_factor (float, optional): _description_. Defaults to 1/0.2125.
+
+    Returns:
+        _type_: _description_
+    """
+    # length = axisMedial.length
+    # start = shapely.get_coordinates(axisMedial)[0]
+    # end = shapely.get_coordinates(axisMedial)[-1]
+    
+    labels = [str(i) for i in range(nb_interval)]
+    bin_size = axisMedial.length / nb_interval
+    x = np.arange(0, axisMedial.length, bin_size)
+    x = np.append(x, axisMedial.length)
+    # interval_dict = {pos: shapely.line_interpolate_point(axis_medial, pos) for pos in x}
+    
+    # if group_lst == None:
+    #     group_lst = list(sdata.table.obs[group_by].unique())
+
+    # find pts sur la ligne le plus proche de la cellule
+    sdata[shape_key]["closest_point_on_line"] = sdata[shape_key].apply(
+        lambda row: shapely.ops.nearest_points(row.geometry.centroid, axisMedial)[1] , axis = 1)
+    # distance du pts start au point closest (plus proche de la cellule)
+    # ATTENTION il faut faire la distance sur la courbe
+    sdata[shape_key]["distance_from_start"] = sdata[shape_key]['closest_point_on_line'].apply(
+        lambda row: axisMedial.project(row))
+
+    # colonne distance en colonne categorie par rapport a x si distance entre 0 et 1 label 0 etc.
+    sdata[shape_key]['cat'] = pd.cut(sdata[shape_key]['distance_from_start'], 
+                                 bins=x, labels=labels, right=True, include_lowest=True)
+    # sdata[shape_key]['cat'] = sdata[shape_key]['cat'].astype(int)
+    
+    if return_df:
+        return sdata[shape_key]
+    else: 
+        return
+    
+    
+def df_for_genes(
+    sdata: sd.SpatialData,
+    axisMedial: shapely.LineString,
+    genes: str | list,
+    nb_interval: int = 10,
+    transcript_key: str = 'transcripts',
+    feature_key: str = 'feature_name',
+    qv: int = 20,
+    # shape_key: 'str' = 'cell_boundaries',
+    group_by: str = "cell_type",
+    # group_lst: '[]|None' = None,
+    # scale_factor: 'float' = 1/0.2125, # because xenium in microns and sdata in global
+    # return_df: 'bool' = False,
+):
+    """Calculate the number of transcripts for a list of genes in 'nb_interval' regulars intervals
+
+    Args:
+        sdata (sd.SpatialData): _description_
+        axisMedial (shapely.LineString): _description_
+        genes (str | list): _description_
+        nb_interval (int, optional): _description_. Defaults to 10.
+        transcript_key (str, optional): _description_. Defaults to 'transcripts'.
+        feature_key (str, optional): _description_. Defaults to 'feature_name'.
+        qv (int, optional): _description_. Defaults to 20.
+        group_by (str, optional): _description_. Defaults to "cell_type".
+
+    Returns:
+        df_trans_sub: _description_
+    """
+    labels = [str(i) for i in range(nb_interval)]
+
+    bin_size = axisMedial.length / nb_interval
+    x = np.arange(0, axisMedial.length, bin_size)
+    x = np.append(x, axisMedial.length)
+    # interval_df = pd.DataFrame(x, columns= ["position"])
+
+    # # depuis le start -> find pts a une distance de 'position'
+    # interval_df['point'] = interval_df.apply(lambda row: shapely.line_interpolate_point(axis_medial, row.position) , axis = 1)
+    # interval_df
+    
+    df_transcripts = sdata[transcript_key].compute()
+    df_trans_sub = df_transcripts[df_transcripts[feature_key].isin(genes)]
+    df_trans_sub = df_trans_sub[df_trans_sub['qv'] >= qv]
+
+    # find pts sur la ligne le plus proche de la cellule
+    df_trans_sub["closest"] = df_trans_sub.apply(lambda row: 
+        shapely.ops.nearest_points(
+            shapely.Point([row.x, row.y]),
+            axisMedial)[1] , axis = 1)
+
+    # distance du pts start au point closest (plus proche de la cellule)
+    # ATTENTION il faut faire la distance sur la courbe
+    df_trans_sub["distance"] = df_trans_sub['closest'].apply(
+        lambda row: axisMedial.project(row))
+
+    # colonne distance en colonne categorie par rapport a x si distance entre 0 et 1 label 0 etc.
+    df_trans_sub['cat'] = pd.cut(df_trans_sub['distance'], 
+                                 bins=x, labels=labels, right=True)
+    df_trans_sub[feature_key] = df_trans_sub[feature_key].cat.remove_unused_categories()
+    df_trans_sub = df_trans_sub.merge(sdata['table'].obs[['cell_id', group_by]], 
+                                      on = 'cell_id', how = 'left')
+    # how = left -> else remove transcript not assign to a cell ? 
+    # can be put by default on inner to remove transcript not assigned to a cell
+    return df_trans_sub
+
+
+def find_polygon(geometry, up, down):
+    if up.intersects(geometry.centroid):
+        return 1
+    elif down.intersects(geometry.centroid):
+        return 2
+    elif up.intersects(geometry):
+        return 1
+    elif down.intersects(geometry):
+        return 2
+    else:
+        return 0
+    
+    
+
+def orthogonalDistance(
+    data: pd.DataFrame | gpd.GeoDataFrame,
+    # sdata: sd.SpatialData,
+    polygon: shapely.Polygon, 
+    centerline: shapely.LineString,
+    # shape_key: str = 'cell_boundaries',
+    group_by: str | None = None,
+    distance: int = 30,
+    round: int = 3,
+) -> gpd.GeoDataFrame:  
+    """Normalize the distance by following the othogonal axis
+
+    Args:
+        data (pd.DataFrame | gpd.GeoDataFrame): _description_
+        polygon (shapely.Polygon): _description_
+        centerline (shapely.LineString): _description_
+        group_by (str | None, optional): _description_. Defaults to None.
+        distance (int, optional): _description_. Defaults to 30.
+        round (int, optional): _description_. Defaults to 3.
+
+    Returns:
+        gpd.GeoDataFrame: _description_
+    """
+
+    df_compute = data.copy()
+    if not isinstance(df_compute, gpd.GeoDataFrame):
+        df_compute = gpd.GeoDataFrame(df_compute, geometry=gpd.points_from_xy(df_compute['x'], df_compute['y']))
+
+    if len(shapely.ops.split(polygon, centerline).geoms) == 1 :
+        print('Extend line...')
+        order_centers= shapely.get_coordinates(centerline)
+        extendedLine_start = extendLine(order_centers[0, :], 
+                                        order_centers[1, :], distance=distance)
+        extendedLine_end = extendLine(order_centers[-1, :], 
+                                        order_centers[-2, :], distance=distance)
+        lineFinal = shapely.LineString(np.vstack([shapely.get_coordinates(extendedLine_start)[0], 
+                                                order_centers,
+                                                shapely.get_coordinates(extendedLine_end)[0]]))
+        split_shapes = shapely.ops.split(polygon, lineFinal)
+        
+    if len(split_shapes.geoms) == 2:
+        up_shape = split_shapes.geoms[0]
+        down_shape = split_shapes.geoms[1]
+    else:
+        print(len(split_shapes.geoms))
+        print("Increase distance")
+        return
+    
+    df_compute['distance_pts_line'] = df_compute.distance(centerline)
+    gdf_polygons = gpd.GeoDataFrame({'cat_layers': [1, 2]}, geometry=[up_shape, down_shape])
+    df_compute = gpd.sjoin(df_compute, gdf_polygons, predicate="intersects", how="left")
+    # type(df_trans_sub) # geopandas.geodataframe.GeoDataFrame
+
+    df_compute.loc[df_compute['cat_layers'] == 1, 'distance_pts_line'] *= -1
+    df_compute['distance_pts_line'] -= df_compute['distance_pts_line'].min()
+    # print(df_compute['distance_pts_line'].min())
+    df_compute['distance_normalize']  = (df_compute['distance_pts_line'] / df_compute['distance_pts_line'].max()).round(round)
+    
+    return df_compute

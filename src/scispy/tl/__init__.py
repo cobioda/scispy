@@ -8,11 +8,21 @@ from .basic import (
     scis_prop,
     sdata_querybox,
     sdata_rotate,
+    df_for_genes,
+    fromAxisMedialToDf,
+    orthogonalDistance,
 )
 
 from .shapes import (
     add_to_shapes,
-    shapes_of_cell_type
+    shapes_of_cell_type,
+    add_metadata_to_shape,
+    alpha_shape,
+)
+
+from .unfolding import (
+    centerline,
+    shapeToImg,
 )
 
 __all__ = [
@@ -26,4 +36,11 @@ __all__ = [
     "sdata_querybox",
     "scis_prop",
     "shapes_of_cell_type",
+    "centerline",
+    "shapeToImg",
+    "add_metadata_to_shape",
+    "alpha_shape",
+    "df_for_genes",
+    "fromAxisMedialToDf",
+    "orthogonalDistance",
 ]
