@@ -20,7 +20,7 @@ from spatialdata.models import PointsModel, ShapesModel
 from spatialdata.transformations import Affine, Identity, Translation, set_transformation
 from statannotations.Annotator import Annotator
 import shapely
-from unfolding import extendLine
+from ..tl.unfolding import extendLine
 
 def add_shapes_from_hdf5(
     sdata: sd.SpatialData = None,
