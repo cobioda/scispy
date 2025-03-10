@@ -15,12 +15,14 @@ from pydeseq2.dds import DeseqDataSet
 from pydeseq2.ds import DeseqStats
 from shapely import affinity
 from shapely.geometry import Polygon
+from shapely import LineString, Point, get_coordinates
 from spatialdata import SpatialData
 from spatialdata.models import PointsModel, ShapesModel
 from spatialdata.transformations import Affine, Identity, Translation, set_transformation
 from statannotations.Annotator import Annotator
 import shapely
 from ..tl.unfolding import extendLine
+
 
 def add_shapes_from_hdf5(
     sdata: sd.SpatialData = None,
@@ -122,11 +124,12 @@ def add_to_shapes(
 
 def add_to_points(
     sdata: sd.SpatialData,
-    point_key: str = "celltypes",
-    label_key: str = "celltype",
-    x_key: str = "center_x",
-    y_key: str = "center_y",
-    target_coordinates: str = "microns",
+    shape_key: str="cell_boundaries",
+    point_key: str = "celltype",
+    label_key: str = "scmusk",
+    x_key: str = "x",
+    y_key: str = "y",
+    target_coordinates: str = "global",
 ):
     """Add anatomical shapes to sdata.
 
@@ -134,14 +137,14 @@ def add_to_points(
     ----------
     sdata
         SpatialData object.
+    shape_key
+        shape_key in sdata from which get the centroid
     label_key
         label_key in sdata.table.obs to add as shape element
     x_key
         x coordinate in sdata.table.obs to add as shape element x coordinate
     y_key
         y coordinate in sdata.table.obs to add as shape element y coordinate
-    element_key
-        element point key to add to sdata
     target_coordinates
         target_coordinates system of sdata object
 
@@ -151,14 +154,22 @@ def add_to_points(
 
     # could also be done using centroid on polygons but ['x','y'] columns is great for counting along x axis in scis.pl.plot_shape_along_axis()
     # gdf = sdata['PGW9-2-2A_region_0_polygons'].centroid
-
-    df = pd.DataFrame(sdata.table.obs[[label_key, x_key, y_key]])
-    df = df.rename(columns={label_key: "ct"})
+    
+    gdf = sdata[shape_key].centroid
+    df = pd.DataFrame(get_coordinates(gdf))
+    df['ct'] = list(sdata['table'].obs[label_key])
+    df = df.rename(columns={0: x_key, 1: y_key})
     ddf = dd.from_pandas(df, npartitions=1)
-
     sdata.points[point_key] = PointsModel.parse(
-        ddf, coordinates={"x": x_key, "y": y_key}, transformations={target_coordinates: Identity()}
+            ddf, coordinates={"x": x_key, "y": y_key}, transformations={target_coordinates: Identity()}
     )
+    
+    #df = pd.DataFrame(sdata.table.obs[[label_key, x_key, y_key]])
+    #df = df.rename(columns={label_key: "ct"})
+    #ddf = dd.from_pandas(df, npartitions=1)
+    #sdata.points[point_key] = PointsModel.parse(
+    #    ddf, coordinates={"x": x_key, "y": y_key}, transformations={target_coordinates: Identity()}
+    #)
 
 
 def get_sdata_polygon(
