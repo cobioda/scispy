@@ -21,7 +21,7 @@
 
 </div>
 
-## Backgrounnnnnnndddd
+## Background
 
 <p>
   A pthon package build on top of spatialdata for Single-Cell In-Situ Spatial-Omics data analysis, developped to handle Vizgen (merscope), Nanostring (cosmx) and 10xGenomics (Xenium) experiments.
