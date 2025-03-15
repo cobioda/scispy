@@ -1,6 +1,5 @@
 import math
-
-import anndata as an
+import anndata as ad
 import dask.dataframe as dd
 import decoupler as dc
 import geopandas as gpd
@@ -13,9 +12,8 @@ import spatialdata as sd
 from matplotlib import pyplot as plt
 from pydeseq2.dds import DeseqDataSet
 from pydeseq2.ds import DeseqStats
-from shapely import affinity
 from shapely.geometry import Polygon
-from shapely import LineString, Point, get_coordinates
+from shapely import LineString, Point, get_coordinates, affinity
 from spatialdata import SpatialData
 from spatialdata.models import PointsModel, ShapesModel
 from spatialdata.transformations import Affine, Identity, Translation, set_transformation
