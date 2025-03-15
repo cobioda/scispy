@@ -389,7 +389,7 @@ def pseudobulk(
         min_counts=min_counts,
     )
     # print(pdata)
-    adata.uns["pseudobulk"]["matrices"] = pd.DataFrame(pdata.X.T, index=pdata.var_names, columns=pdata.obs_names) 
+    adata.uns["scispy"]["matrice"] = pd.DataFrame(pdata.X.T, index=pdata.var_names, columns=pdata.obs_names) 
     # dc.plot_psbulk_samples(pdata, groupby=[replicate, groups_key], figsize=figsize)
     
     df_total = pd.DataFrame()
