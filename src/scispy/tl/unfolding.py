@@ -157,7 +157,8 @@ def addPoints(
     distance: int= 5000
 ) -> shapely.LineString:
     """
-
+    Add points to touch the boundary 
+    
     Parameters:
         polygon (shapely.Polygon): _description_
         line (shapely.LineString): _description_
