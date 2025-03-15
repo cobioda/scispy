@@ -22,6 +22,7 @@ from spatialdata.transformations import Affine, Identity, Translation, set_trans
 from statannotations.Annotator import Annotator
 import shapely
 from ..tl.unfolding import extendLine
+import itertools
 
 
 def add_shapes_from_hdf5(
@@ -281,25 +282,30 @@ def prep_pseudobulk(
 
     return sdata2
 
-
+ 
 def pseudobulk(
-    adata: an.AnnData,
+    adata: ad.AnnData,
     replicate: str,
     condition: str, # obv. need to be unique per replicate
-    conds: tuple = [],
-    groups_key: str = "scmusk",
-    groups: tuple = [],
+    groups_key: str,
+    conds: list | None = None,
+    pairwise: list | None = None,
+    groups: list | None = None,
     key_added: str = 'results',
     layer: str = "counts",
     min_cells: int = 5,
     top_volcano: int = 20,
-    min_counts: int = 200,
+    min_counts: int = 100,
     sign_thr: float = 0.05,
     lFCs_thr: int = 0.5,
     save: bool = False,
     save_prefix: str = "decoupler",
     figsize: tuple = (8,3),
-) -> pd.DataFrame:
+    digits: int = 3,
+    shrink_LFC: bool = False,
+    plots: bool = False,
+    quiet: bool = True,
+):
     """Decoupler pydeseq2 pseudobulk handler.
 
     Parameters
@@ -340,86 +346,292 @@ def pseudobulk(
     Return a global pd.DataFrame containing the pseudobulk analysis for plotting.
     """
     # https://decoupler-py.readthedocs.io/en/latest/notebooks/pseudobulk.html
-    # sns.set(font_scale=0.5)
+    # sns.set(font_scale=0.5)  
+    adata.uns["scispy"] = {}
     
-    conds.sort()
-    adconds = adata[adata.obs[condition].isin(conds)].copy()
+    if groups is None:
+        groups = adata.obs[groups_key].cat.categories.tolist()
+    # print(groups)
+
+    if (conds is None) & (pairwise is None):
+        conds = list(adata.obs[condition].cat.categories)
+        pairwise = list(itertools.combinations(conds, 2))
+    elif (conds != None) & (pairwise is None):
+        pairwise = list(itertools.combinations(conds, 2))
+    elif (conds is None) & (pairwise != None):
+        conds = list(set(itertools.chain(*pairwise)))
+    
+    print(pairwise)
+    print(conds)
+    
+    # if (conds is None):
+    #     conds = list(adata.obs[condition].cat.categories)
+    #     print(conds)
+
+    # if pairwise is None:
+    #     pairwise = list(itertools.combinations(conds, 2))
+    # else:
+    #     conds = list(set(itertools.chain(*pairwise)))
+    # print(pairwise)
+    # print(conds)
+
+    # conds.sort()
+    # conds = [reference_level, tested_level]
+ 
+    adconds = adata[(adata.obs[condition].isin(conds)) & (adata.obs[groups_key].isin(groups))].copy()
 
     pdata = dc.get_pseudobulk(
         adconds,
-        sample_col=replicate,  # "pseudoname"
-        groups_col=groups_key,  # celltype
+        sample_col=replicate,  
+        # groups_col=groups_key,  
+        groups_col=[groups_key, condition],  
         layer=layer,
         mode="sum",
         min_cells=min_cells,
         min_counts=min_counts,
     )
+    # print(pdata)
+    adata.uns["pseudobulk"]["matrices"] = pd.DataFrame(pdata.X.T, index=pdata.var_names, columns=pdata.obs_names) 
     # dc.plot_psbulk_samples(pdata, groupby=[replicate, groups_key], figsize=figsize)
-
-    if groups is None:
-        groups = adconds.obs[groups_key].cat.categories.tolist()
-
-    df_total = pd.DataFrame()
-    for ct in groups:
-        print(ct)
-        
-        sub = pdata[pdata.obs[groups_key] == ct].copy()
-
-        if len(sub.obs[condition].to_list()) > 1:
-            # Obtain genes that pass the thresholds
-            genes = dc.filter_by_expr(sub, group=condition, min_count=5, min_total_count=5)
-            # Filter by these genes
-            sub = sub[:, genes].copy()
-
-            if len(sub.obs[condition].unique().tolist()) > 1:
-                # Build DESeq2 object
-                dds = DeseqDataSet(
-                    adata=sub,
-                    design_factors=condition,
-                    ref_level=[condition, conds[1]],
-                    refit_cooks=True,
-                    quiet=True,
-                )
-
-                if len(sub.obs[replicate].unique().tolist()) > 2:
-                    dds.deseq2()
-                    stat_res = DeseqStats(dds, contrast=[condition, conds[1], conds[0]], quiet=True)
-                    stat_res.summary()
-                    # might be cond_2
-                    stat_res.lfc_shrink(coeff=condition+"[T."+conds[1]+"]")
-                    results_df = stat_res.results_df
-
-                    # sign_thr=0.05, lFCs_thr=0.5
-                    results_df["pvals"] = -np.log10(results_df["padj"])
-                    up_msk = (results_df["log2FoldChange"] >= lFCs_thr) & (results_df["pvals"] >= -np.log10(sign_thr))
-                    dw_msk = (results_df["log2FoldChange"] <= -lFCs_thr) & (results_df["pvals"] >= -np.log10(sign_thr))
-                    signs = results_df[up_msk | dw_msk].sort_values("pvals", ascending=False)
-                    signs = signs.iloc[:top_volcano]
-                    signs = signs.sort_values("log2FoldChange", ascending=False)
-
-                    if len(signs.index.tolist()) > 0:
-                        fig, axs = plt.subplots(1, 2, figsize=figsize)
-                        dc.plot_volcano_df(results_df, x="log2FoldChange", y="padj", ax=axs[0], top=top_volcano)
-                        axs[0].set_title(ct + "("+conds[1]+"-"+conds[0]+")")
-                        sc.pp.normalize_total(sub)
-                        sc.pp.log1p(sub)
-                        sc.pp.scale(sub, max_value=10)
-                        sc.pl.matrixplot(sub, signs.index, groupby=replicate, ax=axs[1])
-                        plt.tight_layout()
-
-                        # concatenate to total
-                        signs[groups_key] = ct
-                        results_df[groups_key] = ct
-                        df_total = pd.concat([df_total, results_df.reset_index()])
-
-                        if save is True:
-                            results_df.to_csv(save_prefix + "_" + ct + ".csv")
-                            fig.savefig(save_prefix + "_" + ct + ".pdf", bbox_inches="tight")
     
-    adata.uns["scispy"] = {}
+    df_total = pd.DataFrame()
+    
+    for test, ref in pairwise:
+        print(f'Start pseudobulk by comparing {test} versus {ref} in the condition {condition}.')
+        for ct in groups:
+            print(ct)
+            sub = pdata[(pdata.obs[groups_key] == ct) & (pdata.obs[condition].isin([ref, test]))].copy()
+            print(sub.obs[condition].unique())
+            
+            if sub.n_obs > 1: 
+                genes = dc.filter_by_expr(sub, group=condition, min_count=5, min_total_count=5)
+                sub = sub[:, genes].copy()
+                
+                # if (sub.n_vars > 0) & (len(sub.obs[condition].unique().tolist()) > 1):
+                if (sub.n_vars > 0) & (len(sub.obs[condition].unique()) > 1):
+                # if len(sub.obs[condition].unique().tolist()) > 1:
+                    dds = DeseqDataSet(
+                        adata=sub,
+                        design=f"~{condition}",
+                        # design_factors=condition,
+                        # ref_level=[condition, conds[1]],
+                        refit_cooks=True,
+                        quiet=quiet,
+                    )
+                    
+                    if len(sub.obs[replicate].unique()) > 2:
+                    # if len(sub.obs[replicate].unique().tolist()) > 2:
+                        dds.deseq2()
+                        stat_res = DeseqStats(dds, contrast=[condition, 
+                                                            test, ref], 
+                                            quiet=quiet)
+                        stat_res.summary()
+                        print(stat_res.contrast_vector.index[1])
+                        if shrink_LFC:
+                            stat_res.lfc_shrink(stat_res.contrast_vector.index[1])
+                            # stat_res.lfc_shrink(coeff=condition+"[T."+conds[1]+"]")
+                        results_df = stat_res.results_df
+
+                        # sign_thr=0.05, lFCs_thr=0.5
+                        results_df["pvals"] = -np.log10(results_df["padj"])
+                        # up_msk = (results_df["log2FoldChange"] >= lFCs_thr) & (results_df["pvals"] >= -np.log10(sign_thr))
+                        # dw_msk = (results_df["log2FoldChange"] <= -lFCs_thr) & (results_df["pvals"] >= -np.log10(sign_thr))
+                        # signs = results_df[up_msk | dw_msk].sort_values("pvals", ascending=False)
+                        # signs = signs.iloc[:top_volcano]
+                        # signs = signs.sort_values("log2FoldChange", ascending=False)
+                        
+                        # concatenate to total
+                        # signs[groups_key] = ct
+                        # results_df[groups_key] = ct
+                        results_df["cell_type"] = ct
+                        results_df["condition"] = test + "_" + ref
+                        results_df["cond_1"] = test
+                        results_df["cond_2"] = ref
+                        # adconds[(adconds.obs[groups_key] == ct) & (adconds.obs['smoking'] == conds[1]), df_basal['index']].layers['counts'].sum(axis=0)
+                        # adconds[(adconds.obs[groups_key] == ct) & (adconds.obs['smoking'] == conds[0]), df_basal['index']].layers['counts'].sum(axis=0)
+
+                        # adconds[(adconds.obs[groups_key] == ct) & (adconds.obs['smoking'] == conds[1])] # 5376  
+                        # adconds[(adconds.obs[groups_key] == ct) & (adconds.obs['smoking'] == conds[0])] # 6072   
+
+                        nb_cells_1 = int(sub.obs.loc[sub.obs[condition] == test, 'psbulk_n_cells'].sum())
+                        nb_cells_2 = int(sub.obs.loc[sub.obs[condition] == ref, 'psbulk_n_cells'].sum())
+
+                        results_df['nbCellsTotal_1'] = nb_cells_1   
+                        results_df['nbCellsTotal_2'] = nb_cells_2 
+
+                        results_df['sum_1'] = sub[sub.obs[condition] == test].X.sum(axis=0)
+                        results_df['sum_2'] = sub[sub.obs[condition] == ref].X.sum(axis=0)
+                        # results_df['sum_1'] = sub[sub.obs['smoking'] == conds[0], results_df['index']].X.sum(axis=0)
+                        # results_df['sum_2'] = sub[sub.obs['smoking'] == conds[1], results_df['index']].X.sum(axis=0)
+                        # results_df['pct_1'] = np.round((adconds[(adconds.obs[groups_key] == ct) & (adconds.obs[condition] == conds[0]), df_basal['index']].layers[layer] > 0).sum(axis=0) / nb_cells_1, decimals=digits).T
+                        # results_df['pct_2'] = np.round((adconds[(adconds.obs[groups_key] == ct) & (adconds.obs[condition] == conds[1]), df_basal['index']].layers[layer] > 0).sum(axis=0) / nb_cells_2, decimals=digits).T
+                        
+                        results_df['pct_1'] = np.round((adconds[(adconds.obs[groups_key] == ct) & (adconds.obs[condition] == test), results_df.index].layers[layer] > 0).sum(axis=0) / nb_cells_1, decimals=digits).T
+                        results_df['pct_2'] = np.round((adconds[(adconds.obs[groups_key] == ct) & (adconds.obs[condition] == ref), results_df.index].layers[layer] > 0).sum(axis=0) / nb_cells_2, decimals=digits).T
+
+                        df_total = pd.concat([df_total, results_df.reset_index(names="gene")])
+                        # df_total = pd.concat([df_total, results_df.reset_index()])
+                        print("============================================================================")
+                        print("============================================================================")
+                        if plots :
+                            if len(signs.index.tolist()) > 0:
+                                fig, axs = plt.subplots(1, 2, figsize=figsize)
+                                dc.plot_volcano_df(results_df, x="log2FoldChange", y="padj", ax=axs[0], top=top_volcano)
+                                axs[0].set_title(ct + "("+conds[1]+"-"+conds[0]+")")
+                                sc.pp.normalize_total(sub)
+                                sc.pp.log1p(sub)
+                                sc.pp.scale(sub, max_value=10)
+                                sc.pl.matrixplot(sub, signs.index, groupby=replicate, ax=axs[1])
+                                plt.tight_layout()
+
+                            if save is True:
+                                results_df.to_csv(save_prefix + "_" + ct + ".csv")
+                                fig.savefig(save_prefix + "_" + ct + ".pdf", bbox_inches="tight")
+
     adata.uns["scispy"][key_added] = df_total.reset_index(drop=True)
-    print("results stored in adata.uns['scispy']['",key_added,"']")
-    print("--> scis.pl.plot_pseudobulk(adata, key='",key_added,"')")
+    # adata.uns["scispy"]["pseudobulk"][key_added] ???
+    print(f'results stored in adata.uns["scispy"][{key_added}]')
+    print(f'--> scis.pl.plot_pseudobulk(adata, key={key_added})')
+
+
+# def pseudobulk(
+#     adata: an.AnnData,
+#     replicate: str,
+#     condition: str, # obv. need to be unique per replicate
+#     conds: tuple = [],
+#     groups_key: str = "scmusk",
+#     groups: tuple = [],
+#     key_added: str = 'results',
+#     layer: str = "counts",
+#     min_cells: int = 5,
+#     top_volcano: int = 20,
+#     min_counts: int = 200,
+#     sign_thr: float = 0.05,
+#     lFCs_thr: int = 0.5,
+#     save: bool = False,
+#     save_prefix: str = "decoupler",
+#     figsize: tuple = (8,3),
+# ) -> pd.DataFrame:
+#     """Decoupler pydeseq2 pseudobulk handler.
+
+#     Parameters
+#     ----------
+#     adata
+#         AnnData object.
+#     replicate
+#         replicate key
+#     condition
+#         condition key
+#     conds
+#         list of the 2 conditions to compare
+#     groups_key
+#         sdata.table.obs key, i.e. cell types
+#     groups
+#         specify the cell types to work with
+#     key_added
+#         The key added to `adata.uns['scispy']` result is saved to.
+#     layer
+#         sdata.table count values layer
+#     min_cells
+#         minimum cell number to keep replicate
+#     min_counts
+#         minimum total count to keep replicate
+#     sign_thr
+#         significant value threshold
+#     lFCs_thr
+#         log-foldchange value threshold
+#     save
+#         wether or not to save plots and tables
+#     save_prefix
+#         prefix for saved plot and tables
+#     figsize
+#         figure size
+
+#     Returns
+#     -------
+#     Return a global pd.DataFrame containing the pseudobulk analysis for plotting.
+#     """
+#     # https://decoupler-py.readthedocs.io/en/latest/notebooks/pseudobulk.html
+#     # sns.set(font_scale=0.5)
+    
+#     conds.sort()
+#     adconds = adata[adata.obs[condition].isin(conds)].copy()
+
+#     pdata = dc.get_pseudobulk(
+#         adconds,
+#         sample_col=replicate,  # "pseudoname"
+#         groups_col=groups_key,  # celltype
+#         layer=layer,
+#         mode="sum",
+#         min_cells=min_cells,
+#         min_counts=min_counts,
+#     )
+#     # dc.plot_psbulk_samples(pdata, groupby=[replicate, groups_key], figsize=figsize)
+
+#     if groups is None:
+#         groups = adconds.obs[groups_key].cat.categories.tolist()
+
+#     df_total = pd.DataFrame()
+#     for ct in groups:
+#         print(ct)
+        
+#         sub = pdata[pdata.obs[groups_key] == ct].copy()
+
+#         if len(sub.obs[condition].to_list()) > 1:
+#             # Obtain genes that pass the thresholds
+#             genes = dc.filter_by_expr(sub, group=condition, min_count=5, min_total_count=5)
+#             # Filter by these genes
+#             sub = sub[:, genes].copy()
+
+#             if len(sub.obs[condition].unique().tolist()) > 1:
+#                 # Build DESeq2 object
+#                 dds = DeseqDataSet(
+#                     adata=sub,
+#                     design_factors=condition,
+#                     ref_level=[condition, conds[1]],
+#                     refit_cooks=True,
+#                     quiet=True,
+#                 )
+
+#                 if len(sub.obs[replicate].unique().tolist()) > 2:
+#                     dds.deseq2()
+#                     stat_res = DeseqStats(dds, contrast=[condition, conds[1], conds[0]], quiet=True)
+#                     stat_res.summary()
+#                     # might be cond_2
+#                     stat_res.lfc_shrink(coeff=condition+"[T."+conds[1]+"]")
+#                     results_df = stat_res.results_df
+
+#                     # sign_thr=0.05, lFCs_thr=0.5
+#                     results_df["pvals"] = -np.log10(results_df["padj"])
+#                     up_msk = (results_df["log2FoldChange"] >= lFCs_thr) & (results_df["pvals"] >= -np.log10(sign_thr))
+#                     dw_msk = (results_df["log2FoldChange"] <= -lFCs_thr) & (results_df["pvals"] >= -np.log10(sign_thr))
+#                     signs = results_df[up_msk | dw_msk].sort_values("pvals", ascending=False)
+#                     signs = signs.iloc[:top_volcano]
+#                     signs = signs.sort_values("log2FoldChange", ascending=False)
+
+#                     if len(signs.index.tolist()) > 0:
+#                         fig, axs = plt.subplots(1, 2, figsize=figsize)
+#                         dc.plot_volcano_df(results_df, x="log2FoldChange", y="padj", ax=axs[0], top=top_volcano)
+#                         axs[0].set_title(ct + "("+conds[1]+"-"+conds[0]+")")
+#                         sc.pp.normalize_total(sub)
+#                         sc.pp.log1p(sub)
+#                         sc.pp.scale(sub, max_value=10)
+#                         sc.pl.matrixplot(sub, signs.index, groupby=replicate, ax=axs[1])
+#                         plt.tight_layout()
+
+#                         # concatenate to total
+#                         signs[groups_key] = ct
+#                         results_df[groups_key] = ct
+#                         df_total = pd.concat([df_total, results_df.reset_index()])
+
+#                         if save is True:
+#                             results_df.to_csv(save_prefix + "_" + ct + ".csv")
+#                             fig.savefig(save_prefix + "_" + ct + ".pdf", bbox_inches="tight")
+    
+#     adata.uns["scispy"] = {}
+#     adata.uns["scispy"][key_added] = df_total.reset_index(drop=True)
+#     print("results stored in adata.uns['scispy']['",key_added,"']")
+#     print("--> scis.pl.plot_pseudobulk(adata, key='",key_added,"')")
 
 
 def sdata_rotate(
