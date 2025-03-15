@@ -7,7 +7,7 @@ import anndata as ad
 import matplotlib.pyplot as plt
 from spatialdata import SpatialData
 import spatialdata_plot
-
+import adjustText as at
 from scispy.tl.basic import sdata_rotate, add_to_points
 
 def plot_shapes(
