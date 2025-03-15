@@ -796,7 +796,7 @@ def sdata_querybox(
 
 
 def scis_prop(
-    adata: an.AnnData,
+    adata: ad.AnnData,
     group_by: str = "scmusk_T4",
     group_only: str = None,
     split_by: str = "anatomy",
