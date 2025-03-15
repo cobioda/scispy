@@ -7,7 +7,9 @@ from .basic import (
     plot_sdata,
     plot_shape_along_axis,
     plot_shapes,
-    plot_pseudobulk,
+    # plot_pseudobulk,
+    stripPlotDE,
+    barplotDE,
 )
 
 __all__ = [
@@ -19,5 +21,7 @@ __all__ = [
     "plot_sdata",
     "plot_multi_sdata",
     "legend_without_duplicate_labels",
-    "plot_pseudobulk",
+    # "plot_pseudobulk",
+    "stripPlotDE",
+    "barplotDE",
 ]

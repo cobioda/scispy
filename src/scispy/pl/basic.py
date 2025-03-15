@@ -4,13 +4,11 @@ import scanpy as sc
 import seaborn as sns
 import spatialdata as sd
 import anndata as ad
-from matplotlib import pyplot as plt
+import matplotlib.pyplot as plt
 from spatialdata import SpatialData
 import spatialdata_plot
 
-from scispy.tl.basic import sdata_rotate
-from scispy.tl.basic import add_to_points
-
+from scispy.tl.basic import sdata_rotate, add_to_points
 
 def plot_shapes(
     sdata: sd.SpatialData,
@@ -589,10 +587,6 @@ def legend_without_duplicate_labels(figure):
     by_label = dict(zip(labels, handles))
     figure.legend(by_label.values(), by_label.keys(), loc="center left", bbox_to_anchor=(1.05, 0.5), fontsize=6, ncol=1)
 
-import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
-import numpy as np
 
 def barplotDE(
     adata: ad.AnnData,
@@ -629,7 +623,6 @@ def barplotDE(
      
     # up_df = df_m[df_m["updown"] == "Up"].reset_index(drop=True)
     # down_df = df_m[df_m["updown"] == "Down"].reset_index(drop=True)
-    
     
     if len(genes_DE_signif[splitby].unique()) > 1 : 
         print("More than one pairwise condition.")
