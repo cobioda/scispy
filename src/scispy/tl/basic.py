@@ -1026,17 +1026,17 @@ def df_for_genes(
     return df_trans_sub
 
 
-def find_polygon(geometry, up, down):
-    if up.intersects(geometry.centroid):
-        return 1
-    elif down.intersects(geometry.centroid):
-        return 2
-    elif up.intersects(geometry):
-        return 1
-    elif down.intersects(geometry):
-        return 2
-    else:
-        return 0
+# def find_polygon(geometry, up, down):
+#     if up.intersects(geometry.centroid):
+#         return 1
+#     elif down.intersects(geometry.centroid):
+#         return 2
+#     elif up.intersects(geometry):
+#         return 1
+#     elif down.intersects(geometry):
+#         return 2
+#     else:
+#         return 0
     
     
 
@@ -1099,3 +1099,42 @@ def orthogonalDistance(
     df_compute['distance_normalize']  = (df_compute['distance_pts_line'] / df_compute['distance_pts_line'].max()).round(round)
     
     return df_compute
+
+
+
+    
+# def orthogonalDistance(
+#     sdata: sd.SpatialData,
+#     polygon: shapely.Polygon, 
+#     centerline: shapely.LineString,
+#     shape_key: str = 'cell_boundaries',
+#     distance: int = 30,
+#     round: int = 3,
+# ):
+#     if len(shapely.ops.split(polygon, centerline).geoms) == 1 :
+#         order_centers= shapely.get_coordinates(centerline)
+#         extendedLine_start = scis.tl.unfolding.extendLine(order_centers[0, :], 
+#                                         order_centers[1, :], distance=distance)
+#         extendedLine_end = scis.tl.unfolding.extendLine(order_centers[-1, :], 
+#                                         order_centers[-2, :], distance=distance)
+#         lineFinal = shapely.LineString(np.vstack([shapely.get_coordinates(extendedLine_start)[0], 
+#                                                 order_centers,
+#                                                 shapely.get_coordinates(extendedLine_end)[0]]))
+#         split_shapes = shapely.ops.split(polygon, lineFinal)
+        
+#         if len(split_shapes.geoms) == 2:
+#             up_shape = split_shapes.geoms[0]
+#             down_shape = split_shapes.geoms[1]
+#         else:
+#             print(len(split_shapes.geoms))
+#             print("Increase distance")
+#             return
+    
+#     sdata[shape_key]["distance_pts_line"] = sdata[shape_key]["geometry"].apply(
+#         lambda row: shapely.distance(row.centroid, centerline))
+#     sdata[shape_key]['cat_layers']  = sdata[shape_key]["geometry"].apply(
+#         lambda row: find_polygon(row, up_shape,down_shape))    
+#     sdata[shape_key].loc[sdata[shape_key]['cat_layers'] == 1, 'distance_pts_line'] *= -1
+#     sdata[shape_key]['distance_pts_line'] -= sdata[shape_key]['distance_pts_line'].min()
+#     sdata[shape_key]['distance_normalize']  = (sdata[shape_key]['distance_pts_line'] / sdata[shape_key]['distance_pts_line'].max()).round(round)
+#     # print(sdata[shape_key])

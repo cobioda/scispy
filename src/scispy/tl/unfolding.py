@@ -175,7 +175,9 @@ def addPoints(
         print(f'Add point at the {loc} position : {pos}')
         extendedLine = extendLine(order_centers[pos[0], :], 
                                   order_centers[pos[1], :], distance)
-        touch_bound = shapely.get_coordinates(polygon.boundary.intersection(extendedLine))
+        touch_bound = shapely.get_coordinates(polygon.boundary.intersection(
+            shapely.LineString([extendedLine.coords[0], extendedLine.coords[1]])))
+        # touch_bound = shapely.get_coordinates(polygon.boundary.intersection(extendedLine))
 
         if len(touch_bound) > 1 :
             min_dist = float('inf')
