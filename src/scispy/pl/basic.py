@@ -4,13 +4,11 @@ import scanpy as sc
 import seaborn as sns
 import spatialdata as sd
 import anndata as ad
-from matplotlib import pyplot as plt
+import matplotlib.pyplot as plt
 from spatialdata import SpatialData
 import spatialdata_plot
-
-from scispy.tl.basic import sdata_rotate
-from scispy.tl.basic import add_to_points
-
+import adjustText as at
+from scispy.tl.basic import sdata_rotate, add_to_points
 
 def plot_shapes(
     sdata: sd.SpatialData,
@@ -590,18 +588,94 @@ def legend_without_duplicate_labels(figure):
     figure.legend(by_label.values(), by_label.keys(), loc="center left", bbox_to_anchor=(1.05, 0.5), fontsize=6, ncol=1)
 
 
-def plot_pseudobulk(
+def barplotDE(
     adata: ad.AnnData,
-    x_key: str = 'scmusk',
-    y_key: str = 'log2FoldChange',
-    palette: tuple = None,
+    groupby: str = 'cell_type',
+    splitby: str = 'condition',
+    # y_key: str = 'log2FoldChange',
+    palette: tuple | str = 'deep',
     key: str = 'results',
-    title: str = None,
+    # uns_key: str = 'pseudobulk',
+    # title: str = None,
     padj: float = 0.05,
-    log2FoldChange: float = 1,
-    baseMean: float = 50,
+    groups: list | None = None,
+    logFC: float = 0.5,
+    figsize: tuple = (8,3),
+    alpha: float = 0.5,
+    save: bool = False,
+    save_format: str = 'pdf',
+    ):
+    res_de = adata.uns['scispy'][key].copy()
+    # to change
+
+    if groups:
+        print("Filtrer groups...")
+        res_de = res_de[res_de[groupby].isin(groups)]
+
+    res_de["updown"] = np.where(
+            (res_de["padj"] <= padj) & (res_de["log2FoldChange"] >= logFC), "Up",
+            np.where((res_de["padj"] <= padj) & (res_de["log2FoldChange"] <= -logFC), "Down", "NS")
+        )
+    genes_DE_signif = res_de[res_de["updown"] != "NS"]
+    # cell_types = genes_DE_signif[groupby].unique()
+    # all_combinations = pd.MultiIndex.from_product([cell_types, ["Up", "Down"]], names=[groupby, "updown"])
+    # df_m = genes_DE_signif.groupby([groupby, "updown"]).size().reindex(all_combinations, fill_value=0).reset_index(name="value") 
+     
+    # up_df = df_m[df_m["updown"] == "Up"].reset_index(drop=True)
+    # down_df = df_m[df_m["updown"] == "Down"].reset_index(drop=True)
+    
+    if len(genes_DE_signif[splitby].unique()) > 1 : 
+        print("More than one pairwise condition.")
+    for cond in genes_DE_signif[splitby].unique():
+        print(cond)
+        sub_cond = genes_DE_signif[genes_DE_signif[splitby] == cond]
+            
+        cell_types = sub_cond[groupby].unique()
+        all_combinations = pd.MultiIndex.from_product([cell_types, ["Up", "Down"]], names=[groupby, "updown"])
+        df_m = sub_cond.groupby([groupby, "updown"]).size().reindex(all_combinations, fill_value=0).reset_index(name="value") 
+            
+        up_df = df_m[df_m["updown"] == "Up"].reset_index(drop=True)
+        down_df = df_m[df_m["updown"] == "Down"].reset_index(drop=True)
+    
+        plt.figure(figsize=figsize)
+        sns.barplot(data=up_df, x=groupby, y="value", 
+                    hue=groupby, dodge="auto", palette=palette)
+        sns.barplot(data=down_df, x=groupby, y=-down_df["value"], 
+                    hue=groupby, dodge="auto", palette=palette, alpha=alpha)
+            
+        # Add labels
+        for i, row in up_df.iterrows():
+            plt.text(i, row["value"] +1 , str(row["value"]), ha='center', fontsize=10)
+            
+        for i, row in down_df.iterrows():
+            plt.text(i, -row["value"] -4, str(row["value"]), ha='center', fontsize=10)
+            
+        # Customize plot
+        plt.axhline(0, color="grey", linestyle="--")
+        plt.xticks(rotation=45, ha='right', fontsize=12)
+        plt.xlabel("Cell types")
+        plt.ylabel("Number of genes DE")
+        cond1, cond2 = cond.split('_')
+        plt.title(f'Number of genes DE up and down in {cond1} versus {cond2} for each cell type', 
+                  fontsize=14, fontweight='bold')
+        plt.show()
+        
+def stripPlotDE(
+    adata: ad.AnnData,
+    x_key: str = 'cell_type',
+    y_key: str = 'log2FoldChange',
+    splitby = "condition",
+    palette: tuple | str = "deep",
+    key: str = 'results',
+    groups: list | None = None,
+    # title: str = None,
+    padj: float = 0.05,
+    logFC: float = 0.5,
+    # baseMean: float = 50,
     figsize: tuple = (8,3),
     save: bool = False,
+    top: int = 5,
+    order: list | None = None,
     save_format: str = 'pdf',
 ):
     """Plot DEG dataframe from pseudobulk analysis
@@ -627,37 +701,70 @@ def plot_pseudobulk(
     save_format
         pdf or png
     """
-    if palette is None:
-        palette="deep"
-
     df = adata.uns['scispy'][key].copy()
+    df["significative"] = np.where(
+            (df["padj"] < padj) & (df["log2FoldChange"].abs() > logFC),
+            1, 0)
+    # df["significative"] = np.where(
+    #     (df["padj"] < padj) & (df["log2FoldChange"].abs() > logFC) & (df["baseMean"].abs() > baseMean),
+    #     "Sig", "NS"
+    # )
+    
+    if len(df[splitby].unique()) > 1 : 
+        print("More than one pairwise condition.")
 
-    df['significative'] = 0
-    df.loc[df.padj < padj, 'significative'] = 1
-    df.loc[abs(df.log2FoldChange) < log2FoldChange, 'significative'] = 0
-    df.loc[abs(df.baseMean) < baseMean, 'significative'] = 0
+    for cond in df[splitby].unique():
+        print(cond)
+        sub_df = df[df[splitby] == cond]
+        
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
+        if groups:
+            groups_2= groups
+            sub_df = sub_df[sub_df[x_key].isin(groups)]
+        else:
+            groups_2 = sub_df.loc[sub_df["significative"] == 1, x_key].unique()
+            sub_df = sub_df[sub_df[x_key].isin(groups_2)]
+        
+        tmp = sub_df[sub_df['significative']==1].reset_index(drop=True)
+        order = list(tmp.groupby([x_key]).groups.keys())
 
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
-    tmp = df[df.significative==1]
-    tmp = tmp.reset_index(drop=True)
-    order = list(tmp.groupby([x_key]).groups.keys())
+        sns.stripplot(data=sub_df[sub_df['significative']==1], 
+                    x=x_key, y=y_key, hue=x_key, palette=palette,
+                    orient='v', order=order, alpha=0.8, size=5, linewidth=1, 
+                    # edgecolor='black', 
+                    jitter=0.4)
+        
+        tmp["rank"] = tmp.groupby(x_key)["log2FoldChange"].rank(method="first", ascending=False)
+        tmp["top_bottom"] = np.where(
+                tmp["rank"] <= top, "Top",
+                np.where(tmp["rank"] > (tmp.groupby(x_key)["log2FoldChange"].transform("count") - top), 
+                        "Bottom", None))
+        
+        # Label the top points within each group and adjust them
+        texts = []
+        for collection, (_, group_data) in zip(ax.collections, tmp.groupby([x_key])):
+            for i, (x, y) in enumerate(collection.get_offsets()):
+                if group_data.iloc[i]['top_bottom'] is not None:
+                    texts.append(ax.text(x, y, 
+                            group_data.iloc[i]['gene'], 
+                            ha='center', 
+                            va='bottom', color='black', 
+                            size='x-small' # "small"
+                            ))
+        if len(texts) > 0:
+            at.adjust_text(texts, 
+                        expand=(2, 2),
+                        arrowprops=dict(arrowstyle='->', color='black'), ax=ax)
 
-    sns.stripplot(data=tmp, x=x_key, y=y_key, hue=x_key, palette=palette,
-                orient='v', order=order, alpha=0.6, size=5, linewidth=1, edgecolor='black', jitter=0.4)
+        sns.stripplot(data=sub_df[sub_df['significative']==0], 
+                    x=x_key, y=y_key, 
+                    color="grey", 
+                    orient='v', alpha=0.6, size=2, 
+                    jitter=0.4)
 
-    grouped = tmp.groupby([x_key])
-    # Label the points within each group
-    for collection, (group_key, group_data) in zip(ax.collections, grouped):
-        for i, (x, y) in enumerate(collection.get_offsets()):
-            y_value = group_data.iloc[i]['index']
-            ax.text(x, y+0.1, y_value, ha='left', va='bottom', color='grey', size='x-small')
-
-    tmp = df[df.significative==0]
-    sns.stripplot(data=tmp, x=x_key, y=y_key, color="grey", 
-                orient='v', alpha=0.6, size=2, jitter=0.4)
-
-    ax.tick_params(axis='x', rotation=90)
-    ax.set_title(title)
+        ax.tick_params(axis='x', rotation=45, size=12) #  ha='right'
+        cond1, cond2 = cond.split('_')
+        ax.set_title(f'Stripplot of the genes DE in {cond1} versus {cond2} for each cell type')
 
     # save figure
     if save is True:
@@ -667,3 +774,82 @@ def plot_pseudobulk(
         elif save_format == "png":
             print("saving plot_pseudobulk.png")
             plt.savefig("plot_pseudobulk.png", dpi=300, bbox_inches="tight")
+
+        
+# def plot_pseudobulk(
+#     adata: ad.AnnData,
+#     x_key: str = 'scmusk',
+#     y_key: str = 'log2FoldChange',
+#     palette: tuple = None,
+#     key: str = 'results',
+#     title: str = None,
+#     padj: float = 0.05,
+#     log2FoldChange: float = 1,
+#     baseMean: float = 50,
+#     figsize: tuple = (8,3),
+#     save: bool = False,
+#     save_format: str = 'pdf',
+# ):
+#     """Plot DEG dataframe from pseudobulk analysis
+
+#     Parameters
+#     ----------
+#     adata
+#         anndata object
+#     x_key
+#         x key
+#     y_key
+#         y key
+#     key
+#         key in adata.uns['scispy'] storing the results to plot
+#     padj
+#         p adjusted to be significant
+#     log2FoldChange
+#         log2FoldChange to be significant
+#     figsize
+#         figure size
+#     save
+#         wether or not to save the figure
+#     save_format
+#         pdf or png
+#     """
+#     if palette is None:
+#         palette="deep"
+
+#     df = adata.uns['scispy'][key].copy()
+
+#     df['significative'] = 0
+#     df.loc[df.padj < padj, 'significative'] = 1
+#     df.loc[abs(df.log2FoldChange) < log2FoldChange, 'significative'] = 0
+#     df.loc[abs(df.baseMean) < baseMean, 'significative'] = 0
+
+#     fig, ax = plt.subplots(1, 1, figsize=figsize)
+#     tmp = df[df.significative==1]
+#     tmp = tmp.reset_index(drop=True)
+#     order = list(tmp.groupby([x_key]).groups.keys())
+
+#     sns.stripplot(data=tmp, x=x_key, y=y_key, hue=x_key, palette=palette,
+#                 orient='v', order=order, alpha=0.6, size=5, linewidth=1, edgecolor='black', jitter=0.4)
+
+#     grouped = tmp.groupby([x_key])
+#     # Label the points within each group
+#     for collection, (group_key, group_data) in zip(ax.collections, grouped):
+#         for i, (x, y) in enumerate(collection.get_offsets()):
+#             y_value = group_data.iloc[i]['index']
+#             ax.text(x, y+0.1, y_value, ha='left', va='bottom', color='grey', size='x-small')
+
+#     tmp = df[df.significative==0]
+#     sns.stripplot(data=tmp, x=x_key, y=y_key, color="grey", 
+#                 orient='v', alpha=0.6, size=2, jitter=0.4)
+
+#     ax.tick_params(axis='x', rotation=90)
+#     ax.set_title(title)
+
+#     # save figure
+#     if save is True:
+#         if save_format == "pdf":
+#             print("saving plot_pseudobulk.pdf")
+#             plt.savefig("plot_pseudobulk.pdf", bbox_inches="tight")
+#         elif save_format == "png":
+#             print("saving plot_pseudobulk.png")
+#             plt.savefig("plot_pseudobulk.png", dpi=300, bbox_inches="tight")
