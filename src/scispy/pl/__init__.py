@@ -10,6 +10,7 @@ from .basic import (
     # plot_pseudobulk,
     stripPlotDE,
     barplotDE,
+    plot_DE
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     # "plot_pseudobulk",
     "stripPlotDE",
     "barplotDE",
+    "plot_DE",
 ]

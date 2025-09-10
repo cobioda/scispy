@@ -11,6 +11,7 @@ def run_scanpy(
     resolution: float = 0.5,
     positive_coord_only: bool = True,
     key: str = "leiden",
+    scale: bool = True,
 ):
     """Filter and run scanpy analysis.
 
@@ -47,12 +48,15 @@ def run_scanpy(
     sc.pp.log1p(sdata.table)
     sdata.table.raw = sdata.table
 
-    sc.pp.scale(sdata.table, max_value=10)
+    # sc.pp.scale(sdata.table, max_value=10)
     sc.tl.pca(sdata.table, svd_solver="arpack")
     sc.pp.neighbors(sdata.table, n_neighbors=10)
     sc.tl.umap(sdata.table)
     sc.tl.leiden(sdata.table, resolution=resolution, key_added=key)
 
+    if scale:
+        sc.pp.scale(sdata.table, max_value=10)
+        
     fig, axs = plt.subplots(1, 2, figsize=(20, 6))
     sc.pl.embedding(sdata.table, "umap", color=key, ax=axs[0], show=False)
     sc.pl.embedding(sdata.table, "spatial", color=key, size=1, ax=axs[1])

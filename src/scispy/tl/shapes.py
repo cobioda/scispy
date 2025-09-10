@@ -3,27 +3,30 @@ import pandas as pd
 import geopandas as gpd
 from spatialdata.models import ShapesModel
 from shapely import count_coordinates, get_coordinates, affinity
-from spatialdata.transformations import Identity
+from spatialdata.transformations import Identity, get_transformation
 import shapely
 from shapely.ops import unary_union, polygonize
-import shapely
 from scipy.spatial import Delaunay
 import numpy as np
 import math
 import warnings
+import anndata as ad
+
 # from shapely.ops import cascaded_union
 # from shapely.geometry import Polygon
 # from spatialdata.models import PointsModel
 # from shapely import count_coordinates
-
+# from shapely import count_coordinates, get_coordinates
+#  
 def add_to_shapes(
     sdata: sd.SpatialData,
     poly: list, 
     name: list,
-    centerline: list,
+    centerline: list = None,
     shape_key: str = "myshapes",
     scale_factor: float = 0.50825,  # if shapes comes from xenium explorer
     target_coordinates: str = "microns",
+    transfo_object_key : str = 'images',
     # **kwargs,
 ):
     """Add shape element to SpatialData.
@@ -44,108 +47,24 @@ def add_to_shapes(
         target_coordinates system
 
     """
-    if shape_key in list(sdata.shapes.keys()):
+    if shape_key in sdata.shapes:
         print(f'Shape "{shape_key}" is already present in the object.')
         return
 
-    d = {"geometry": [], "name": [], "centerline": []}
-    # df = pd.read_csv(shape_file, **kwargs) 
-    # if target_coordinates == 'global':
-    #     print(f'Convert shape in micron to pixels with a pixel size of : {pixel_size}')
-    #     df[['X', 'Y']] = df[['X', 'Y']] / pixel_size
-        
-    for p, n, c in zip(poly, name, centerline):
-        d["geometry"].append(p)
-        d["name"].append(n)
-        d["centerline"].append(c)
+    d = {"geometry": poly, "name": name}
+    if centerline is not None:
+        d["centerline"] = centerline
 
     gdf = gpd.GeoDataFrame(d)
-    gdf['centerline'] = gpd.GeoSeries(gdf.centerline)
-
-    # scale because it comes from the xenium explorer !!!
-    gdf.geometry = gdf.geometry.scale(
-        xfact=scale_factor, yfact=scale_factor, origin=(0, 0)
-    )
-    gdf.centerline = gdf.centerline.scale(
-        xfact=scale_factor, yfact=scale_factor, origin=(0, 0)
-    )
-
-    # substract the initial image offset (x,y)
-    image_object_key = list(sdata.images.keys())[0]
-    matrix = sd.transformations.get_transformation(
-        sdata[image_object_key], target_coordinates
-    ).to_affine_matrix(input_axes=["x", "y"], output_axes=["x", "y"])
-    x_translation = matrix[0][2]
-    y_translation = matrix[1][2]
-    gdf.geometry = gdf.geometry.apply(
-        affinity.translate, xoff=x_translation, yoff=y_translation
-    )
-    gdf.centerline = gdf.centerline.apply(
-        affinity.translate, xoff=x_translation, yoff=y_translation
-    )
-
-    sdata.shapes[shape_key] = ShapesModel.parse(
-        gdf, transformations ={target_coordinates: Identity()}
-    )
-    print(f"New shape added : '{shape_key}'")
-    return
-
-
-def old_add_to_shapes(
-    sdata: sd.SpatialData,
-    shape_file: str,
-    shape_key: str = "myshapes",
-    scale_factor: float = 0.50825,  # if shapes comes from xenium explorer
-    target_coordinates: str = "microns",
-    **kwargs,
-):
-    """Add shape element to SpatialData.
-
-    Parameters
-    ----------
-    sdata
-        SpatialData object.
-    shape_file
-        coordinates.csv file from xenium explorer (region = "normal_1")
-        # vi coordinates.csv -> remove 2 first # lines
-        # dos2unix coordinates.csv
-    shape_key
-        key of element shape
-    scale_factor
-        scale factor conversion applied to x and y coordinates for real micron coordinates
-    target_coordinates
-        target_coordinates system
-
-    """
-    if shape_key in list(sdata.shapes.keys()):
-        print(f'Shape "{shape_key}" is already present in the object.')
-        return
-
-    d = {"geometry": [], "name": []}
-    df = pd.read_csv(shape_file, **kwargs) 
-    # if target_coordinates == 'global':
-    #     print(f'Convert shape in micron to pixels with a pixel size of : {pixel_size}')
-    #     df[['X', 'Y']] = df[['X', 'Y']] / pixel_size
-        
-    for name, group in df.groupby("Selection"):
-        if len(group) >= 3:
-            poly = shapely.Polygon(zip(group.X, group.Y))
-            d["geometry"].append(poly)
-            d["name"].append(name)
-        else:
-            print("Shape with less than 3 points")
-            
-    gdf = gpd.GeoDataFrame(d)
-
+    
     # scale because it comes from the xenium explorer !!!
     gdf.geometry = gdf.geometry.scale(
         xfact=scale_factor, yfact=scale_factor, origin=(0, 0)
     )
 
     # substract the initial image offset (x,y)
-    image_object_key = list(sdata.images.keys())[0]
     matrix = sd.transformations.get_transformation(
-        sdata[image_object_key], target_coordinates
+        sdata[transfo_object_key], target_coordinates
     ).to_affine_matrix(input_axes=["x", "y"], output_axes=["x", "y"])
     x_translation = matrix[0][2]
     y_translation = matrix[1][2]
@@ -153,9 +72,17 @@ def old_add_to_shapes(
         affinity.translate, xoff=x_translation, yoff=y_translation
     )
 
+    if centerline is not None:
+        gdf['centerline'] = gpd.GeoSeries(gdf['centerline'])
+        gdf.centerline = gdf.centerline.scale(
+            xfact=scale_factor, yfact=scale_factor, origin=(0, 0))
+        gdf.centerline = gdf.centerline.apply(
+            affinity.translate, xoff=x_translation, yoff=y_translation)
+
     sdata.shapes[shape_key] = ShapesModel.parse(
-        gdf, transformations ={target_coordinates: Identity()}
+        gdf, transformations = {target_coordinates: Identity()}
     )
+
     print(f"New shape added : '{shape_key}'")
     return
 
@@ -199,9 +126,14 @@ def add_metadata_to_shape(
             sdata.table.obs[obs_key], 
             how="left", left_index=True, right_index=True
         )
+
+    transfo = get_transformation(sdata[shape_key])
+    print(transfo)
     sdata.shapes[shape_key] = ShapesModel.parse(
-        gdf, transformations={target_coordinates: Identity()}
+        gdf, transformations={target_coordinates: transfo}
     )
+    print(get_transformation(sdata[shape_key]))
+
     sdata.shapes[shape_key]["len_shape"] = sdata.shapes[shape_key]["geometry"].apply(
         lambda x: count_coordinates(x)
     )
@@ -351,3 +283,168 @@ def alpha_shape(
     else:
         return unary_union(triangles), edge_points, all_circum_r
 
+
+def old_add_to_shapes(
+    sdata: sd.SpatialData,
+    shape_file: str,
+    shape_key: str = "myshapes",
+    scale_factor: float = 0.50825,  # if shapes comes from xenium explorer
+    target_coordinates: str = "microns",
+    **kwargs,
+):
+    """Add shape element to SpatialData.
+
+    Parameters
+    ----------
+    sdata
+        SpatialData object.
+    shape_file
+        coordinates.csv file from xenium explorer (region = "normal_1")
+        # vi coordinates.csv -> remove 2 first # lines
+        # dos2unix coordinates.csv
+    shape_key
+        key of element shape
+    scale_factor
+        scale factor conversion applied to x and y coordinates for real micron coordinates
+    target_coordinates
+        target_coordinates system
+
+    """
+    if shape_key in list(sdata.shapes.keys()):
+        print(f'Shape "{shape_key}" is already present in the object.')
+        return
+
+    d = {"geometry": [], "name": []}
+    df = pd.read_csv(shape_file, **kwargs) 
+    # if target_coordinates == 'global':
+    #     print(f'Convert shape in micron to pixels with a pixel size of : {pixel_size}')
+    #     df[['X', 'Y']] = df[['X', 'Y']] / pixel_size
+        
+    for name, group in df.groupby("Selection"):
+        if len(group) >= 3:
+            poly = shapely.Polygon(zip(group.X, group.Y))
+            d["geometry"].append(poly)
+            d["name"].append(name)
+        else:
+            print("Shape with less than 3 points")
+            
+    gdf = gpd.GeoDataFrame(d)
+
+    # scale because it comes from the xenium explorer !!!
+    gdf.geometry = gdf.geometry.scale(
+        xfact=scale_factor, yfact=scale_factor, origin=(0, 0)
+    )
+
+    # substract the initial image offset (x,y)
+    image_object_key = list(sdata.images.keys())[0]
+    matrix = sd.transformations.get_transformation(
+        sdata[image_object_key], target_coordinates
+    ).to_affine_matrix(input_axes=["x", "y"], output_axes=["x", "y"])
+    x_translation = matrix[0][2]
+    y_translation = matrix[1][2]
+    gdf.geometry = gdf.geometry.apply(
+        affinity.translate, xoff=x_translation, yoff=y_translation
+    )
+
+    sdata.shapes[shape_key] = ShapesModel.parse(
+        gdf, transformations ={target_coordinates: Identity()}
+    )
+    print(f"New shape added : '{shape_key}'")
+    return
+
+
+
+def count_in_shape(
+    sdata: sd.SpatialData,
+    shape_key: str,
+    transcript_key: str = 'transcripts',
+    feature_key: str = 'feature_name',
+    qv: int = 20,
+    how: str = "inner",
+    predicate: str = "intersects",
+    coordinates: list = ['x', 'y'],
+    gene_exclude_pattern: str = "Unassigned.*|Deprecated.*|Intergenic.*|Neg.*",
+):
+    df_transcripts = sdata[transcript_key].copy()
+    df_transcripts = df_transcripts[(df_transcripts['qv'] >= qv) & (df_transcripts.is_gene)]
+    df_transcripts = df_transcripts[~(df_transcripts[feature_key].str.contains(gene_exclude_pattern, regex=True))].compute()
+    df_transcripts[feature_key] = df_transcripts[feature_key].cat.remove_unused_categories()
+
+    df_transcripts = gpd.GeoDataFrame(
+        df_transcripts, 
+        geometry=gpd.points_from_xy(df_transcripts[coordinates[0]], 
+                                    df_transcripts[coordinates[1]]))
+    
+    df_merge = gpd.sjoin(df_transcripts, sdata[shape_key], predicate=predicate, how=how)
+    count = df_merge.groupby(feature_key).size().sort_index()
+
+    return count.to_numpy()
+
+
+
+def shape_to_pseudobulk(
+    sdata: sd.SpatialData,
+    obs_val: int | str,
+    obs_key: str,
+    cell_id: str = 'cell_id',
+    convex_hull: bool = True,
+    samples: list | None = None,
+    save = True,
+):
+    if not samples:
+        samples = list(sdata.tables.keys())
+    print(len(samples))
+    shape_pseudo_counts = {}
+
+    for n, table_key in enumerate(samples):
+        print(table_key)
+
+        id_sample = table_key.split('-')[1]
+        transcript_key = f"transcripts-{id_sample}"
+        shape_key = f"shape-{id_sample}" 
+        shape_cells_key = sdata[table_key].uns['spatialdata_attrs']['region']
+
+        sub_cells = sdata[table_key].obs.loc[sdata[table_key].obs[obs_key] == obs_val, cell_id].values
+        # print(len(sub_cells))
+
+        if type(shape_cells_key) == list:
+            print(len(shape_cells_key))
+            shape_cells_key = shape_cells_key[0]
+        list_points = [poly.centroid for poly in sdata[shape_cells_key].loc[sub_cells].geometry.values]
+        # print(len(list_points))
+
+        if convex_hull:
+            shape = shapely.convex_hull(shapely.MultiPoint(list_points))
+        else:
+            print("Genereate alpha-shape")
+            print('Not adapted for the moment')
+            return
+        
+        print('add shape')
+        add_to_shapes(
+            sdata = sdata,
+            poly = [shape],
+            name = [shape_key],
+            target_coordinates ="global",
+            # centerline = [None],
+            transfo_object_key= transcript_key,
+            shape_key= shape_key,
+            scale_factor = 1
+        )
+        print('count')
+        shape_pseudo_counts[id_sample] = count_in_shape(
+            sdata= sdata,
+            shape_key = shape_key ,
+            transcript_key = transcript_key,
+        )
+    pseudo_counts = pd.DataFrame(shape_pseudo_counts)
+    pseudo_counts.index = sdata[table_key].var_names
+
+    pdata_shapes = ad.AnnData(
+        X=pseudo_counts.T, 
+    )
+
+    if save:
+        file = f'shape_pseudocount_{obs_key}_{obs_val}_per_samples'
+        pdata_shapes.write(file + '.h5ad')
+    return pdata_shapes

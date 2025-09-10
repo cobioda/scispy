@@ -21,7 +21,7 @@ from statannotations.Annotator import Annotator
 import shapely
 from ..tl.unfolding import extendLine
 import itertools
-
+from tqdm import tqdm
 
 def add_shapes_from_hdf5(
     sdata: sd.SpatialData = None,
@@ -291,11 +291,13 @@ def pseudobulk(
     groups: list | None = None,
     key_added: str = 'results',
     layer: str = "counts",
-    min_cells: int = 5,
     top_volcano: int = 20,
+    min_cells: int = 5,
     min_counts: int = 100,
-    sign_thr: float = 0.05,
-    lFCs_thr: int = 0.5,
+    # min_count: int = 5, 
+    # min_total_count: int = 5,
+    # sign_thr: float = 0.05,
+    # lFCs_thr: int = 0.5,
     save: bool = False,
     save_prefix: str = "decoupler",
     figsize: tuple = (8,3),
@@ -315,7 +317,7 @@ def pseudobulk(
     condition
         condition key
     conds
-        list of the 2 conditions to compare
+        list of the 2 conditions to compare. First is the test and second is the ref
     groups_key
         sdata.table.obs key, i.e. cell types
     groups
@@ -359,8 +361,8 @@ def pseudobulk(
     elif (conds is None) & (pairwise != None):
         conds = list(set(itertools.chain(*pairwise)))
     
-    print(pairwise)
-    print(conds)
+    # print(pairwise)
+    # print(conds)
     
     # if (conds is None):
     #     conds = list(adata.obs[condition].cat.categories)
@@ -377,17 +379,33 @@ def pseudobulk(
     # conds = [reference_level, tested_level]
  
     adconds = adata[(adata.obs[condition].isin(conds)) & (adata.obs[groups_key].isin(groups))].copy()
-
-    pdata = dc.get_pseudobulk(
-        adconds,
+    
+    pdata = dc.pp.pseudobulk(
+        adata=adconds,
         sample_col=replicate,  
         # groups_col=groups_key,  
         groups_col=[groups_key, condition],  
         layer=layer,
         mode="sum",
+        # min_cells=min_cells,
+        # min_counts=min_counts,
+    )
+    dc.pp.filter_samples(
+        pdata, 
         min_cells=min_cells,
         min_counts=min_counts,
     )
+    # pdata = dc.get_pseudobulk(
+    #     adconds,
+    #     sample_col=replicate,  
+    #     # groups_col=groups_key,  
+    #     groups_col=[groups_key, condition],  
+    #     layer=layer,
+    #     mode="sum",
+    #     min_cells=min_cells,
+    #     min_counts=min_counts,
+    # )
+
     # print(pdata)
     adata.uns["scispy"]["matrice"] = pd.DataFrame(pdata.X.T, index=pdata.var_names, columns=pdata.obs_names) 
     # dc.plot_psbulk_samples(pdata, groupby=[replicate, groups_key], figsize=figsize)
@@ -396,14 +414,14 @@ def pseudobulk(
     
     for test, ref in pairwise:
         print(f'Start pseudobulk by comparing {test} versus {ref} in the condition {condition}.')
-        for ct in groups:
-            print(ct)
+        for ct in tqdm(groups, total=len(groups), desc=groups_key):
+            # print(ct)
             sub = pdata[(pdata.obs[groups_key] == ct) & (pdata.obs[condition].isin([ref, test]))].copy()
-            print(sub.obs[condition].unique())
+            # print(sub.obs[condition].unique())
             
             if sub.n_obs > 1: 
-                genes = dc.filter_by_expr(sub, group=condition, min_count=5, min_total_count=5)
-                sub = sub[:, genes].copy()
+                dc.pp.filter_by_expr(sub, group=condition, min_count=5, min_total_count=5)
+                # sub = sub[:, genes].copy()
                 
                 # if (sub.n_vars > 0) & (len(sub.obs[condition].unique().tolist()) > 1):
                 if (sub.n_vars > 0) & (len(sub.obs[condition].unique()) > 1):
@@ -420,11 +438,12 @@ def pseudobulk(
                     if len(sub.obs[replicate].unique()) > 2:
                     # if len(sub.obs[replicate].unique().tolist()) > 2:
                         dds.deseq2()
-                        stat_res = DeseqStats(dds, contrast=[condition, 
-                                                            test, ref], 
-                                            quiet=quiet)
+                        stat_res = DeseqStats(
+                            dds, 
+                            contrast=[condition, test, ref], 
+                            quiet=quiet)
                         stat_res.summary()
-                        print(stat_res.contrast_vector.index[1])
+                        # print(stat_res.contrast_vector.index[1])
                         if shrink_LFC:
                             stat_res.lfc_shrink(stat_res.contrast_vector.index[1])
                             # stat_res.lfc_shrink(coeff=condition+"[T."+conds[1]+"]")
@@ -438,53 +457,44 @@ def pseudobulk(
                         # signs = signs.iloc[:top_volcano]
                         # signs = signs.sort_values("log2FoldChange", ascending=False)
                         
-                        # concatenate to total
-                        # signs[groups_key] = ct
-                        # results_df[groups_key] = ct
+                        nb_cells_1 = int(sub.obs.loc[sub.obs[condition] == test, 'psbulk_cells'].sum())
+                        nb_cells_2 = int(sub.obs.loc[sub.obs[condition] == ref, 'psbulk_cells'].sum())
+
                         results_df["cell_type"] = ct
                         results_df["condition"] = test + "_" + ref
                         results_df["cond_1"] = test
                         results_df["cond_2"] = ref
-                        # adconds[(adconds.obs[groups_key] == ct) & (adconds.obs['smoking'] == conds[1]), df_basal['index']].layers['counts'].sum(axis=0)
-                        # adconds[(adconds.obs[groups_key] == ct) & (adconds.obs['smoking'] == conds[0]), df_basal['index']].layers['counts'].sum(axis=0)
-
-                        # adconds[(adconds.obs[groups_key] == ct) & (adconds.obs['smoking'] == conds[1])] # 5376  
-                        # adconds[(adconds.obs[groups_key] == ct) & (adconds.obs['smoking'] == conds[0])] # 6072   
-
-                        nb_cells_1 = int(sub.obs.loc[sub.obs[condition] == test, 'psbulk_n_cells'].sum())
-                        nb_cells_2 = int(sub.obs.loc[sub.obs[condition] == ref, 'psbulk_n_cells'].sum())
-
                         results_df['nbCellsTotal_1'] = nb_cells_1   
                         results_df['nbCellsTotal_2'] = nb_cells_2 
-
                         results_df['sum_1'] = sub[sub.obs[condition] == test].X.sum(axis=0)
                         results_df['sum_2'] = sub[sub.obs[condition] == ref].X.sum(axis=0)
-                        # results_df['sum_1'] = sub[sub.obs['smoking'] == conds[0], results_df['index']].X.sum(axis=0)
-                        # results_df['sum_2'] = sub[sub.obs['smoking'] == conds[1], results_df['index']].X.sum(axis=0)
-                        # results_df['pct_1'] = np.round((adconds[(adconds.obs[groups_key] == ct) & (adconds.obs[condition] == conds[0]), df_basal['index']].layers[layer] > 0).sum(axis=0) / nb_cells_1, decimals=digits).T
-                        # results_df['pct_2'] = np.round((adconds[(adconds.obs[groups_key] == ct) & (adconds.obs[condition] == conds[1]), df_basal['index']].layers[layer] > 0).sum(axis=0) / nb_cells_2, decimals=digits).T
-                        
-                        results_df['pct_1'] = np.round((adconds[(adconds.obs[groups_key] == ct) & (adconds.obs[condition] == test), results_df.index].layers[layer] > 0).sum(axis=0) / nb_cells_1, decimals=digits).T
-                        results_df['pct_2'] = np.round((adconds[(adconds.obs[groups_key] == ct) & (adconds.obs[condition] == ref), results_df.index].layers[layer] > 0).sum(axis=0) / nb_cells_2, decimals=digits).T
+                   
+                        mask_1 = (adconds.obs[groups_key] == ct) & (adconds.obs[condition] == test) & (adconds.obs[replicate].isin(sub.obs[replicate].unique()))
+                        mask_2 = (adconds.obs[groups_key] == ct) & (adconds.obs[condition] == ref) & (adconds.obs[replicate].isin(sub.obs[replicate].unique()))
+                        # print(adconds[mask_1])     
+                        # print(adconds[mask_2])      
+
+                        results_df['pct_1'] = np.round((adconds[mask_1, results_df.index].layers[layer] > 0).sum(axis=0) / nb_cells_1, decimals=digits).T
+                        results_df['pct_2'] = np.round((adconds[mask_2, results_df.index].layers[layer] > 0).sum(axis=0) / nb_cells_2, decimals=digits).T
 
                         df_total = pd.concat([df_total, results_df.reset_index(names="gene")])
                         # df_total = pd.concat([df_total, results_df.reset_index()])
                         print("============================================================================")
                         print("============================================================================")
-                        if plots :
-                            if len(signs.index.tolist()) > 0:
-                                fig, axs = plt.subplots(1, 2, figsize=figsize)
-                                dc.plot_volcano_df(results_df, x="log2FoldChange", y="padj", ax=axs[0], top=top_volcano)
-                                axs[0].set_title(ct + "("+conds[1]+"-"+conds[0]+")")
-                                sc.pp.normalize_total(sub)
-                                sc.pp.log1p(sub)
-                                sc.pp.scale(sub, max_value=10)
-                                sc.pl.matrixplot(sub, signs.index, groupby=replicate, ax=axs[1])
-                                plt.tight_layout()
+                        # if plots :
+                        #     if len(signs.index.tolist()) > 0:
+                        #         fig, axs = plt.subplots(1, 2, figsize=figsize)
+                        #         dc.plot_volcano_df(results_df, x="log2FoldChange", y="padj", ax=axs[0], top=top_volcano)
+                        #         axs[0].set_title(ct + "("+conds[1]+"-"+conds[0]+")")
+                        #         sc.pp.normalize_total(sub)
+                        #         sc.pp.log1p(sub)
+                        #         sc.pp.scale(sub, max_value=10)
+                        #         sc.pl.matrixplot(sub, signs.index, groupby=replicate, ax=axs[1])
+                        #         plt.tight_layout()
 
-                            if save is True:
-                                results_df.to_csv(save_prefix + "_" + ct + ".csv")
-                                fig.savefig(save_prefix + "_" + ct + ".pdf", bbox_inches="tight")
+                        #     if save is True:
+                        #         results_df.to_csv(save_prefix + "_" + ct + ".csv")
+                        #         fig.savefig(save_prefix + "_" + ct + ".pdf", bbox_inches="tight")
 
     adata.uns["scispy"][key_added] = df_total.reset_index(drop=True)
     # adata.uns["scispy"]["pseudobulk"][key_added] ???
@@ -903,13 +913,13 @@ def scis_prop(
             ax.set_title(str(n))
             plt.tight_layout()
 
-
 def fromAxisMedialToDf(
-    sdata: sd.SpatialData,
+    data: sd.SpatialData | pd.DataFrame | gpd.GeoDataFrame, # NEW choice of multiple input, BEFORE only sdata
     axisMedial: shapely.LineString,
     nb_interval: int = 10,
     shape_key: str = 'cell_boundaries',
     group_by: str = "cell_type_pred",
+    coordinates: list = ['x', 'y'], # NEW
     # group_lst: '[]|None' = None,
     # scale_factor: float = 1/0.2125, # because xenium in microns and sdata in global
     return_df: bool = False,
@@ -928,10 +938,16 @@ def fromAxisMedialToDf(
     Returns:
         _type_: _description_
     """
-    # length = axisMedial.length
-    # start = shapely.get_coordinates(axisMedial)[0]
-    # end = shapely.get_coordinates(axisMedial)[-1]
-    
+    if isinstance(data,sd.SpatialData):
+        df_along = data[shape_key].copy()
+    elif isinstance(data,pd.DataFrame):
+        df_along = data.copy()
+
+    if not isinstance(df_along, gpd.GeoDataFrame):
+        df_along = gpd.GeoDataFrame(df_along, 
+                                      geometry=gpd.points_from_xy(df_along[coordinates[0]], 
+                                                                  df_along[coordinates[1]]))
+
     labels = [str(i) for i in range(nb_interval)]
     bin_size = axisMedial.length / nb_interval
     x = np.arange(0, axisMedial.length, bin_size)
@@ -942,20 +958,25 @@ def fromAxisMedialToDf(
     #     group_lst = list(sdata.table.obs[group_by].unique())
 
     # find pts sur la ligne le plus proche de la cellule
-    sdata[shape_key]["closest_point_on_line"] = sdata[shape_key].apply(
+    df_along["closest_point_on_line"] = df_along.apply(
         lambda row: shapely.ops.nearest_points(row.geometry.centroid, axisMedial)[1] , axis = 1)
     # distance du pts start au point closest (plus proche de la cellule)
     # ATTENTION il faut faire la distance sur la courbe
-    sdata[shape_key]["distance_from_start"] = sdata[shape_key]['closest_point_on_line'].apply(
+    df_along["distance_from_start"] = df_along['closest_point_on_line'].apply(
         lambda row: axisMedial.project(row))
 
     # colonne distance en colonne categorie par rapport a x si distance entre 0 et 1 label 0 etc.
-    sdata[shape_key]['cat'] = pd.cut(sdata[shape_key]['distance_from_start'], 
-                                 bins=x, labels=labels, right=True, include_lowest=True)
-    # sdata[shape_key]['cat'] = sdata[shape_key]['cat'].astype(int)
+    df_along['cat_along'] = pd.cut(df_along['distance_from_start'], 
+                             bins=x, labels=labels, right=True, include_lowest=True)
+    df_along['dst_along_norm']  = (df_along['distance_from_start'] / df_along['distance_from_start'].max()).round(3)
     
+    if isinstance(data,sd.SpatialData):
+        data[shape_key][['cat_along', 'dst_along_norm']] = df_along[['cat_along', 'dst_along_norm']]
+    elif isinstance(data,pd.DataFrame):
+        data[['cat_along', 'dst_along_norm']] = df_along[['cat_along', 'dst_along_norm']]
+
     if return_df:
-        return sdata[shape_key]
+        return df_along
     else: 
         return
     
@@ -1026,29 +1047,24 @@ def df_for_genes(
     return df_trans_sub
 
 
-# def find_polygon(geometry, up, down):
-#     if up.intersects(geometry.centroid):
-#         return 1
-#     elif down.intersects(geometry.centroid):
-#         return 2
-#     elif up.intersects(geometry):
-#         return 1
-#     elif down.intersects(geometry):
-#         return 2
-#     else:
-#         return 0
-    
-    
+
+def centroid_intersects(point, centroid, line, distance):
+    if shapely.LineString([point, centroid]).intersects(line):
+        return -distance
+    else:
+        return distance
 
 def orthogonalDistance(
-    data: pd.DataFrame | gpd.GeoDataFrame,
-    # sdata: sd.SpatialData,
+    data: sd.SpatialData | pd.DataFrame | gpd.GeoDataFrame,
     polygon: shapely.Polygon, 
     centerline: shapely.LineString,
-    # shape_key: str = 'cell_boundaries',
-    group_by: str | None = None,
-    distance: int = 30,
+    shape_key: str = 'cell_boundaries',
+    # group_by: str | None = None,
+    # distance: int = 30,
+    distance : str = 'centroid',
     round: int = 3,
+    return_df: bool = False,
+    coordinates: list = ['x', 'y'],
 ) -> gpd.GeoDataFrame:  
     """Normalize the distance by following the othogonal axis
 
@@ -1063,42 +1079,87 @@ def orthogonalDistance(
     Returns:
         gpd.GeoDataFrame: _description_
     """
+    if isinstance(data,sd.SpatialData):
+        df_compute = data[shape_key].copy()
+    elif isinstance(data,pd.DataFrame):
+        df_compute = data.copy()
 
-    df_compute = data.copy()
     if not isinstance(df_compute, gpd.GeoDataFrame):
-        df_compute = gpd.GeoDataFrame(df_compute, geometry=gpd.points_from_xy(df_compute['x'], df_compute['y']))
-
-    if len(shapely.ops.split(polygon, centerline).geoms) == 1 :
-        print('Extend line...')
-        order_centers= shapely.get_coordinates(centerline)
-        extendedLine_start = extendLine(order_centers[0, :], 
-                                        order_centers[1, :], distance=distance)
-        extendedLine_end = extendLine(order_centers[-1, :], 
-                                        order_centers[-2, :], distance=distance)
-        lineFinal = shapely.LineString(np.vstack([shapely.get_coordinates(extendedLine_start)[0], 
-                                                order_centers,
-                                                shapely.get_coordinates(extendedLine_end)[0]]))
-        split_shapes = shapely.ops.split(polygon, lineFinal)
-        
-    if len(split_shapes.geoms) == 2:
-        up_shape = split_shapes.geoms[0]
-        down_shape = split_shapes.geoms[1]
+        df_compute = gpd.GeoDataFrame(df_compute, 
+                                      geometry=gpd.points_from_xy(df_compute[coordinates[0]], 
+                                                                  df_compute[coordinates[1]]))
+    
+    if distance == 'centroid':
+        df_compute['distance_to_line'] = df_compute.centroid.distance(centerline)
+        df_compute['project_on_line'] = centerline.interpolate(centerline.project(df_compute.centroid))
+    elif distance == 'cell':
+        df_compute['distance_to_line'] = df_compute.distance(centerline)
+        df_compute['project_on_line'] = centerline.interpolate(centerline.project(df_compute))
     else:
-        print(len(split_shapes.geoms))
-        print("Increase distance")
+        print("Distance unknown. Please select centroid or cell.")
         return
-    
-    df_compute['distance_pts_line'] = df_compute.distance(centerline)
-    gdf_polygons = gpd.GeoDataFrame({'cat_layers': [1, 2]}, geometry=[up_shape, down_shape])
-    df_compute = gpd.sjoin(df_compute, gdf_polygons, predicate="intersects", how="left")
-    # type(df_trans_sub) # geopandas.geodataframe.GeoDataFrame
 
-    df_compute.loc[df_compute['cat_layers'] == 1, 'distance_pts_line'] *= -1
-    df_compute['distance_pts_line'] -= df_compute['distance_pts_line'].min()
-    # print(df_compute['distance_pts_line'].min())
-    df_compute['distance_normalize']  = (df_compute['distance_pts_line'] / df_compute['distance_pts_line'].max()).round(round)
+    pol_ctr = polygon.centroid
+    # check if the line between cell and shape's centroid intersect the centerline or not 
+    # distance < 0 if intersect and > 0 if not 
+    df_compute['distance'] = df_compute.apply(
+        lambda row: centroid_intersects(row['geometry'].centroid, 
+                                        pol_ctr, centerline, row['distance_to_line']),
+                                        axis=1)
+
+
+    df_compute['cat_orth'] = 0
+    df_compute.loc[df_compute['distance'] > 0, 'cat_orth'] = 1
+    df_compute['distance'] -= df_compute['distance'].min()
+    df_compute['dst_orth_norm'] = (df_compute['distance'] / df_compute['distance'].max()).round(round)
     
-    return df_compute
+    if isinstance(data,sd.SpatialData):
+        data[shape_key][['cat_orth', 'dst_orth_norm']] = df_compute[['cat_orth', 'dst_orth_norm']]
+    elif isinstance(data,pd.DataFrame):
+        data[['cat_orth', 'dst_orth_norm']] = df_compute[['cat_orth', 'dst_orth_norm']]
+
+    if return_df:
+        return df_compute
+    else:
+        return
+
+
+
+
+# def find_polygon(geometry, up, down):
+#     if up.intersects(geometry.centroid):
+#         return 1
+#     elif down.intersects(geometry.centroid):
+#         return 2
+#     elif up.intersects(geometry):
+#         return 1
+#     elif down.intersects(geometry):
+#         return 2
+#     else:
+#         return 0
+
+
+# def orthogonalDistance(
+#     data: pd.DataFrame | gpd.GeoDataFrame,
+#     polygon: shapely.Polygon, 
+#     centerline: shapely.LineString,
+#     # shape_key: str = 'cell_boundaries',
+#     group_by: str | None = None,
+#     distance: int = 30,
+#     round: int = 3,
+# ) -> gpd.GeoDataFrame:  
+   
+
+#     gdf_polygons = gpd.GeoDataFrame({'cat_layers': [1, 2]}, geometry=[up_shape, down_shape])
+#     df_compute = gpd.sjoin(df_compute, gdf_polygons, predicate="intersects", how="left")
+#     # type(df_trans_sub) # geopandas.geodataframe.GeoDataFrame
+
+#     df_compute.loc[df_compute['cat_layers'] == 1, 'distance_pts_line'] *= -1
+#     df_compute['distance_pts_line'] -= df_compute['distance_pts_line'].min()
+#     # print(df_compute['distance_pts_line'].min())
+#     df_compute['distance_normalize']  = (df_compute['distance_pts_line'] / df_compute['distance_pts_line'].max()).round(round)
+    
+#     return df_compute
 
 
 
