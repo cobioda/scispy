@@ -99,8 +99,8 @@ def load_xenium(
     sdata['table'].layers["counts"] = sdata['table'].X.copy()
     sdata['table'].obs[["center_x", "center_y"]] = sdata['table'].obsm["spatial"]
     
-    #sdata['table'].obs["region"] = region
-    #sdata['table'].uns["spatialdata_attrs"]["region"] = region
+    sdata['table'].obs["region"] = region
+    sdata['table'].uns["spatialdata_attrs"]["region"] = region
     sdata['table'].uns["spatialdata_attrs"]["feature_key"] = feature_key
 
     if index_table:
@@ -148,3 +148,37 @@ def load_cosmx(
 # xenium = {"function" : spatialdata_io.xenium(path, n_jobs = n_jobs),
 #           "region" : region,
 #           "feature_key" : "feature_name"}
+
+
+def subsetSample(
+    sdata: sd.SpatialData,
+    sample: str,
+    regions: list,
+    manip: dict,
+    fov_locations: pd.DataFrame,
+    scale_factor: float = 0.2125,
+    region: str = 'cell_boundaries',
+) -> sd.SpatialData:
+    manip['Region name'] = sample
+    width = fov_locations.iloc[0]['width']
+    height = fov_locations.iloc[0]['height']
+
+    print(f'Start with: {sample}')
+    x_min = math.ceil(fov_locations.loc[regions,]['x'].min() / scale_factor)
+    x_max = math.ceil((fov_locations.loc[regions,]['x'].max() + width) / scale_factor)   
+    y_min = math.ceil(fov_locations.loc[regions,]['y'].min() / scale_factor)
+    y_max = math.ceil((fov_locations.loc[regions,]['y'].max() + height) / scale_factor) 
+    print(f'xmin: {x_min}, xmax: {x_max}')
+    print(f'ymin: {y_min}, ymax: {y_max}')
+        
+    print("Start subset region...")
+    sub_sdata = sd.bounding_box_query(sdata,
+                                      min_coordinate=[x_min, y_min],
+                                      max_coordinate=[x_max, y_max],
+                                      axes=("x", "y"),
+                                      target_coordinate_system="global")
+    sub_sdata['table'].uns["spatialdata_attrs"]["region"] = region
+    sub_sdata['table'].obs['region'] = region
+    print(sub_sdata['table'].uns["spatialdata_attrs"])
+    print("Done subset region")
+    return sub_sdata

@@ -11,6 +11,10 @@ import numpy as np
 import math
 import warnings
 import anndata as ad
+import networkx as nx 
+import squidpy as sq 
+from anndata import AnnData
+from scipy.sparse import csr_matrix
 
 # from shapely.ops import cascaded_union
 # from shapely.geometry import Polygon
@@ -18,6 +22,8 @@ import anndata as ad
 # from shapely import count_coordinates
 # from shapely import count_coordinates, get_coordinates
 #  
+
+
 def add_to_shapes(
     sdata: sd.SpatialData,
     poly: list, 
@@ -63,25 +69,36 @@ def add_to_shapes(
     )
 
     # substract the initial image offset (x,y)
-    matrix = sd.transformations.get_transformation(
+    # matrix = sd.transformations.get_transformation(
+    #     sdata[transfo_object_key], target_coordinates
+    # ).to_affine_matrix(input_axes=["x", "y"], output_axes=["x", "y"])
+    # x_translation = matrix[0][2]
+    # y_translation = matrix[1][2]
+    # gdf.geometry = gdf.geometry.apply(
+    #     affinity.translate, xoff=x_translation, yoff=y_translation
+    # )
+    transfo = sd.transformations.get_transformation(
         sdata[transfo_object_key], target_coordinates
-    ).to_affine_matrix(input_axes=["x", "y"], output_axes=["x", "y"])
-    x_translation = matrix[0][2]
-    y_translation = matrix[1][2]
-    gdf.geometry = gdf.geometry.apply(
-        affinity.translate, xoff=x_translation, yoff=y_translation
     )
 
     if centerline is not None:
         gdf['centerline'] = gpd.GeoSeries(gdf['centerline'])
         gdf.centerline = gdf.centerline.scale(
             xfact=scale_factor, yfact=scale_factor, origin=(0, 0))
-        gdf.centerline = gdf.centerline.apply(
-            affinity.translate, xoff=x_translation, yoff=y_translation)
+        # gdf.centerline = gdf.centerline.apply(
+            # affinity.translate, xoff=x_translation, yoff=y_translation)
 
     sdata.shapes[shape_key] = ShapesModel.parse(
         gdf, transformations = {target_coordinates: Identity()}
     )
+    sd.transformations.set_transformation(
+        sdata.shapes[shape_key], 
+        transfo, 
+        to_coordinate_system=target_coordinates
+    )
+    # print(sd.transformations.get_transformation(
+    #     sdata[shape_key], target_coordinates
+    # ))
 
     print(f"New shape added : '{shape_key}'")
     return
@@ -196,7 +213,7 @@ def shapes_of_cell_type(
 def alpha_shape(
     points: list, 
     alpha: float,
-    threshold: int = None,
+    # threshold: int = None,
     only_shape: bool = True,
 ) -> tuple | shapely.Polygon | shapely.MultiPolygon:
     """Compute the alpha shape of a set of points.
@@ -240,12 +257,12 @@ def alpha_shape(
         edges.add( (i, j) )
         edge_points.append(coords[ [i, j] ])
         
-    if threshold:
-        print('threshodl') 
-        seuil = threshold
-    else:
-        print('alpha')
-        seuil = 1.0/alpha
+    # if threshold:
+    #     print('threshodl') 
+    #     seuil = threshold
+    # else:
+    #     print('alpha')
+    #     seuil = 1.0/alpha
         
     coords = np.array([point.coords[0]
                        for point in points])
@@ -270,7 +287,7 @@ def alpha_shape(
         circum_r = a*b*c/(4.0*area) # radius of circumcircle
         all_circum_r.append(circum_r)
         
-        if circum_r < seuil:
+        if circum_r < alpha:
             add_edge(edges, edge_points, coords, ia, ib)
             add_edge(edges, edge_points, coords, ib, ic)
             add_edge(edges, edge_points, coords, ic, ia)
@@ -381,20 +398,86 @@ def count_in_shape(
     return count.to_numpy()
 
 
+def remove_long_links(
+    adata: AnnData,
+    distance_percentile: float = 99.0,
+    connectivity_key: str | None = None,
+    distances_key: str | None = None,
+    neighs_key: str | None = None,
+    copy: bool = False,
+) -> tuple[csr_matrix, csr_matrix] | None:
+    """
+    Remove links between cells at a distance bigger than a certain percentile of all positive distances.
+
+    It is designed for data with generic coordinates.
+
+    Parameters
+    ----------
+    %(adata)s
+
+    distance_percentile
+        Percentile of the distances between cells over which links are trimmed after the network is built.
+    %(conn_key)s
+
+    distances_key
+        Key in :attr:`anndata.AnnData.obsp` where spatial distances are stored.
+        Default is: :attr:`anndata.AnnData.obsp` ``['{{Key.obsp.spatial_dist()}}']``.
+    neighs_key
+        Key in :attr:`anndata.AnnData.uns` where the parameters from gr.spatial_neighbors are stored.
+        Default is: :attr:`anndata.AnnData.uns` ``['{{Key.uns.spatial_neighs()}}']``.
+
+    %(copy)s
+
+    Returns
+    -------
+    If ``copy = True``, returns a :class:`tuple` with the new spatial connectivities and distances matrices.
+
+    Otherwise, modifies the ``adata`` with the following keys:
+        - :attr:`anndata.AnnData.obsp` ``['{{connectivity_key}}']`` - the new spatial connectivities.
+        - :attr:`anndata.AnnData.obsp` ``['{{distances_key}}']`` - the new spatial distances.
+        - :attr:`anndata.AnnData.uns`  ``['{{neighs_key}}']`` - :class:`dict` containing parameters.
+    """
+
+    conns, dists = adata.obsp[connectivity_key], adata.obsp[distances_key]
+
+    if copy:
+        conns, dists = conns.copy(), dists.copy()
+
+    threshold = np.percentile(np.array(dists[dists != 0]).squeeze(), distance_percentile)
+    conns[dists > threshold] = 0
+    dists[dists > threshold] = 0
+
+    conns.eliminate_zeros()
+    dists.eliminate_zeros()
+
+    if copy:
+        return conns, dists
+    else:
+        adata.uns[neighs_key]["params"]["radius"] = threshold
+    # print(threshold)
+
 
 def shape_to_pseudobulk(
     sdata: sd.SpatialData,
     obs_val: int | str,
     obs_key: str,
+    # library_key: str,
     cell_id: str = 'cell_id',
     convex_hull: bool = True,
     samples: list | None = None,
-    save = True,
+    metadata: list | None = None,
+    percentile: float = 99.0,
+    scale_factor: float = 1.0,
+    connectivity_key: str ='spatial_connectivities',
+    distances_key: str ='spatial_distances',
+    neighs_key: str ='spatial_neighbors',
+    save: bool = True,
 ):
     if not samples:
         samples = list(sdata.tables.keys())
     print(len(samples))
     shape_pseudo_counts = {}
+    samples_meta_dict= {}
 
     for n, table_key in enumerate(samples):
         print(table_key)
@@ -403,17 +486,36 @@ def shape_to_pseudobulk(
         transcript_key = f"transcripts-{id_sample}"
         shape_key = f"shape-{id_sample}" 
         shape_cells_key = sdata[table_key].uns['spatialdata_attrs']['region']
+        
+        if type(obs_val) != list:
+            adata = sdata[table_key][sdata[table_key].obs[obs_key].isin([obs_val])].copy()
+        else:
+            adata = sdata[table_key][sdata[table_key].obs[obs_key].isin(obs_val)].copy()
 
-        sub_cells = sdata[table_key].obs.loc[sdata[table_key].obs[obs_key] == obs_val, cell_id].values
-        # print(len(sub_cells))
+        if metadata:
+            metadata_dict = {col: sdata[table_key].obs[col].unique()[0] for col in metadata}
+            samples_meta_dict[id_sample] = metadata_dict
 
         if type(shape_cells_key) == list:
             print(len(shape_cells_key))
             shape_cells_key = shape_cells_key[0]
-        list_points = [poly.centroid for poly in sdata[shape_cells_key].loc[sub_cells].geometry.values]
-        # print(len(list_points))
 
         if convex_hull:
+            sq.gr.spatial_neighbors(adata, coord_type='generic', delaunay=True)
+            # sq.gr.spatial_neighbors(adata, library_key=library_key, coord_type='generic', delaunay=True)
+            remove_long_links(
+                adata,
+                distance_percentile = percentile,
+                connectivity_key=connectivity_key, 
+                distances_key=distances_key,
+                neighs_key=neighs_key)
+            G = nx.from_numpy_array(adata.obsp[connectivity_key].todense())
+            largest_cc = max(nx.connected_components(G), key=len)
+            sub_cells = adata[list(largest_cc),].obs[cell_id].values
+            print(len(sub_cells))
+            list_points = [poly.centroid for poly in sdata[shape_cells_key].loc[sub_cells,].geometry.values]
+            print(len(list_points))
+
             shape = shapely.convex_hull(shapely.MultiPoint(list_points))
         else:
             print("Genereate alpha-shape")
@@ -426,10 +528,9 @@ def shape_to_pseudobulk(
             poly = [shape],
             name = [shape_key],
             target_coordinates ="global",
-            # centerline = [None],
             transfo_object_key= transcript_key,
             shape_key= shape_key,
-            scale_factor = 1
+            scale_factor = scale_factor,
         )
         print('count')
         shape_pseudo_counts[id_sample] = count_in_shape(
@@ -440,11 +541,20 @@ def shape_to_pseudobulk(
     pseudo_counts = pd.DataFrame(shape_pseudo_counts)
     pseudo_counts.index = sdata[table_key].var_names
 
-    pdata_shapes = ad.AnnData(
-        X=pseudo_counts.T, 
-    )
+    if metadata:
+        pdata_shapes = ad.AnnData(
+            X = pseudo_counts.T, 
+            obs = pd.DataFrame(samples_meta_dict).T
+        )
+    else:
+        pdata_shapes = ad.AnnData(
+            X = pseudo_counts.T
+        )
 
     if save:
-        file = f'shape_pseudocount_{obs_key}_{obs_val}_per_samples'
+        if type(obs_val) == list:
+            file = f'shape_pseudocount_{obs_key}_{"_".join(map(str, obs_val))}_per_samples'
+        else:
+            file = f'shape_pseudocount_{obs_key}_{obs_val}_per_samples'
         pdata_shapes.write(file + '.h5ad')
     return pdata_shapes

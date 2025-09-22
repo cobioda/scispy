@@ -18,6 +18,7 @@ from .shapes import (
     shapes_of_cell_type,
     add_metadata_to_shape,
     alpha_shape,
+    shape_to_pseudobulk,
 )
 
 from .unfolding import (
@@ -43,4 +44,5 @@ __all__ = [
     "df_for_genes",
     "fromAxisMedialToDf",
     "orthogonalDistance",
+    "shape_to_pseudobulk",
 ]

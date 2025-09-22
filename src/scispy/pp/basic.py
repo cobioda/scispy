@@ -5,6 +5,74 @@ import scvi
 import spatialdata as sd
 from matplotlib import pyplot as plt
 
+def metrics_summary(
+    sdata: 'sd.SpatialData',
+    scale_factor: 'float' = 0.2125
+) -> 'dict':
+    adata = sdata['table'].copy()
+    transcripts = sdata['transcripts']
+    img_dims = sdata['morphology_focus']['scale0'].dims
+
+    number_of_cells_detected = adata.n_obs
+    median_transcripts_per_cell = adata.obs['transcript_counts'][adata.obs['transcript_counts'] != 0].median()
+    adata.obs['genes_per_cell'] = np.sum(adata.X > 0, axis=1)
+    median_genes_per_cell = adata.obs['genes_per_cell'][adata.obs['genes_per_cell'] != 0].median()
+
+    total_cell_area = round(adata.obs['cell_area'].sum(), ndigits = 1)
+    segmentation_method = adata.obs['segmentation_method'].value_counts()
+    # percent_segmentation_method = dict(round(segmentation_method / number_of_cells_detected * 100, ndigits=1))
+    percent_segmentation_method = round(segmentation_method / number_of_cells_detected * 100, ndigits=1)
+    
+    total_high_quality_decoded_transcripts = len(transcripts[
+                                                 (transcripts['qv'] >= 20) &
+                                                 (transcripts['is_gene'])
+                                                 ])
+    # is_gene = TRUE -> custom_gene + predesigned_gene
+    number_of_fov_selected = len(transcripts['fov_name'].unique())
+    transcripts_within_cells = len(transcripts[
+                                   (transcripts['qv'] >= 20) &
+                                   (transcripts['is_gene']) &
+                                   (transcripts['cell_id'] != "UNASSIGNED")
+                                   ])
+    
+    percent_of_transcripts_within_cells = round(transcripts_within_cells / total_high_quality_decoded_transcripts * 100, 
+                                                ndigits=1)
+    
+    nuclear_transcript_count = len(transcripts[
+                                   (transcripts['qv'] >= 20) &
+                                   (transcripts['is_gene']) &
+                                   (transcripts['cell_id'] != "UNASSIGNED") &
+                                   (transcripts['overlaps_nucleus'] == 1)
+                                   ])
+    # The density of cells per 100 microns squared.
+    nuclear_transcripts_per_100µm = round(nuclear_transcript_count / 
+                                          adata.obs['nucleus_area'].sum() *100,
+                                          ndigits=1)
+    
+    # TO improve
+    region_area = round((img_dims['x'] * scale_factor) * (img_dims['y'] * scale_factor), 
+                        ndigits=1) 
+    # 3591422.2 ERROR trouver la bonne technique
+    # 3,131,787.3
+    cells_per_100µm = round(number_of_cells_detected / region_area * 100,
+                            ndigits=2)
+    # The density of cells per 100 microns squared.
+    # 0,22 ERROR -> 0,25
+
+    dict_columns = {'Number of cells detected': number_of_cells_detected,
+                    'Median transcripts per cell': median_transcripts_per_cell,
+                    'Nuclear transcripts per 100 µm²': nuclear_transcripts_per_100µm,
+                    'Total high quality decoded transcripts': total_high_quality_decoded_transcripts,
+                    'Number of FOV selected': number_of_fov_selected,
+                    'Region area (µm²)': region_area,
+                    'Total cell area (µm²)': total_cell_area,
+                    'Percent of transcripts within cells': percent_of_transcripts_within_cells,	
+                    'Cells per 100 µm²': cells_per_100µm,
+                    'Median genes per cell': median_genes_per_cell,
+                   } | dict(segmentation_method)
+    return dict_columns
+
+    
 def run_scanpy(
     sdata: sd.SpatialData,
     min_counts: int = 20,
@@ -59,7 +127,7 @@ def run_scanpy(
         
     fig, axs = plt.subplots(1, 2, figsize=(20, 6))
     sc.pl.embedding(sdata.table, "umap", color=key, ax=axs[0], show=False)
-    sc.pl.embedding(sdata.table, "spatial", color=key, size=1, ax=axs[1])
+    sc.pl.embedding(sdata.table, "spatial", color=key, ax=axs[1])
     plt.tight_layout()
 
     # synchronize current shapes with filtered table
@@ -172,6 +240,8 @@ def scvi_annotate(
 def sync_shape(
     sdata: sd.SpatialData,
     shape_key: str = None,
+    table_key: str = 'table',
+
 ):
     """Synchronize shapes with table
 
@@ -186,9 +256,8 @@ def sync_shape(
     if shape_key is None:
         shape_key = sdata.table.uns["spatialdata_attrs"]["region"]
 
-    instance_key = sdata.table.uns["spatialdata_attrs"]["instance_key"]
-    sdata.shapes[shape_key] = sdata.shapes[shape_key].loc[sdata.table.obs[instance_key].tolist()]
-
+    _cells = sdata[table_key].obs[sdata[table_key].uns["spatialdata_attrs"]["instance_key"]].to_list()
+    sdata[shape_key] = sdata[shape_key].loc[sdata[shape_key].index.isin(_cells)]
 
 # def switch_region(
 #    sdata: sd.SpatialData,
