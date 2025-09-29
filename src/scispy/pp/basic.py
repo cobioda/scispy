@@ -2,6 +2,7 @@ import anndata as an
 import pandas as pd
 import scanpy as sc
 import scvi
+import numpy as np
 import spatialdata as sd
 from matplotlib import pyplot as plt
 
