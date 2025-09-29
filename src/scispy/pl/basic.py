@@ -9,6 +9,8 @@ from spatialdata import SpatialData
 import spatialdata_plot
 import adjustText as at
 from scispy.tl.basic import sdata_rotate, add_to_points
+from matplotlib.transforms import Bbox
+import decoupler as dc 
 
 def plot_shapes(
     sdata: sd.SpatialData,
@@ -596,7 +598,7 @@ def barplotDE(
     palette: tuple | str = 'deep',
     key: str = 'results',
     # uns_key: str = 'pseudobulk',
-    # title: str = None,
+    title: str = None,
     padj: float = 0.05,
     groups: list | None = None,
     logFC: float = 0.5,
@@ -645,10 +647,12 @@ def barplotDE(
             
         # Add labels
         for i, row in up_df.iterrows():
-            plt.text(i, row["value"] +1 , str(row["value"]), ha='center', fontsize=10)
+            if row["value"] != 0:
+                plt.text(i, row["value"]  , str(row["value"]), ha='center', va='bottom', fontsize=10)
             
         for i, row in down_df.iterrows():
-            plt.text(i, -row["value"] -4, str(row["value"]), ha='center', fontsize=10)
+            if row["value"] != 0:
+                plt.text(i, -row["value"] , str(row["value"]), ha='center', va='top', fontsize=10)
             
         # Customize plot
         plt.axhline(0, color="grey", linestyle="--")
@@ -656,10 +660,14 @@ def barplotDE(
         plt.xlabel("Cell types")
         plt.ylabel("Number of genes DE")
         cond1, cond2 = cond.split('_')
-        plt.title(f'Number of genes DE up and down in {cond1} versus {cond2} for each cell type', 
-                  fontsize=14, fontweight='bold')
+
+        if not title:
+            title = f'Number of genes DE up and down in {cond1} versus {cond2} for each cell type'
+
+        plt.title(title, fontsize=14, fontweight='bold')
         plt.show()
         
+
 def stripPlotDE(
     adata: ad.AnnData,
     x_key: str = 'cell_type',
@@ -775,7 +783,109 @@ def stripPlotDE(
             print("saving plot_pseudobulk.png")
             plt.savefig("plot_pseudobulk.png", dpi=300, bbox_inches="tight")
 
-        
+
+def plot_DE(
+    adata: ad.AnnData,
+    colors: dict,
+    condition = 'condition',
+    cell_type: str = 'cell_type',
+    top_volcano: int = 5,
+    thr_stat: float = 0.5, 
+    thr_sign: float = 0.05,
+    min_pct: float = 0.3,
+    fill_na: str = 'grey',
+    cmap: str ='bwr',
+    col_cluster: bool = False,
+):
+    """Heatmap and volcano plot from pseudobulk analysis
+
+    Parameters
+    ----------
+    adata
+        anndata object
+    colors
+        dict of colors for each metadata to plot in the heatmap
+    condition
+        column that refers to the condition comparison. Default, set to condition
+    cell_type
+        column that refers to the celltype column. Default, set to cell_type  
+    key
+        key in adata.uns['scispy'] storing the results to plot
+    thr_sign
+        p adjusted to be significant
+    thr_stat
+        log2FoldChange to be significant
+    min_pct
+        min pct.1 or pct.2 to be significant
+    fill_na
+        if colors not provide for one condition, put it in grey by default
+    """
+    results = adata.uns['scispy']['results']
+    matrix = adata.uns["scispy"]["matrice"]
+    celltypes = results[cell_type].unique()
+    
+    for cell in celltypes:
+        sub_mtx = matrix.loc[:,matrix.columns.str.contains(f'_{cell}_')].T
+        adata = ad.AnnData(sub_mtx)
+        adata.obs[['celltype','condition']] = adata.obs_names.str.split('_', expand=True).to_frame(index=False)[[2,3]].values
+        print(cell)
+        sub_cell = results[results[cell_type] == cell]
+        sub_cell.index = sub_cell['gene']
+
+        signs = sub_cell.loc[(sub_cell['padj'] <= thr_sign) & (np.abs(sub_cell['log2FoldChange']) >= thr_sign) &
+            ((sub_cell['pct_1'] >= min_pct) | (sub_cell['pct_2']  >= min_pct)), 'gene'].unique()
+    
+        col_colors = pd.DataFrame(adata.obs[condition].map(colors[condition]))
+        col_colors['celltype'] = "Blue"
+        col_colors = col_colors.fillna(fill_na)
+        # row_colors #= row_colors[['celltype', 'condition']] 
+
+        if len(signs) > 0:        
+            sc.pp.normalize_total(adata)
+            sc.pp.log1p(adata)
+            sc.pp.scale(adata, max_value=10)
+
+            df_test = pd.DataFrame(adata[:,signs].X.T, index=adata[:,signs].var_names, columns=adata.obs_names) 
+            df_test = df_test.apply(pd.to_numeric, errors="coerce")
+            print(df_test.shape)
+            print(len(signs))
+
+            if len(signs) >1 : 
+                row_dendrogram =True
+            else:
+                row_dendrogram=False
+
+            g = sns.clustermap(
+                df_test, 
+                figsize=(7, 10),
+                row_cluster=row_dendrogram,
+                col_cluster=col_cluster,
+                cmap=cmap,
+                col_colors=col_colors, 
+                center=0,
+                colors_ratio=0.05,
+                )
+
+            g.fig.set_size_inches(15, 2+len(signs))
+            g.fig.subplots_adjust(right=0.45)
+            g.cax.set_position(Bbox.from_bounds(0, 0.85, 0.08, 0.15))  # now this works
+
+            ax = g.fig.add_axes([0.55, 0.05, 0.42, 0.92])
+            dc.pl.volcano(
+                sub_cell, 
+                figsize=(5,5),
+                x="log2FoldChange", 
+                y="padj", 
+                ax=ax,
+                thr_stat=0.5, 
+                thr_sign=0.05, 
+                top=top_volcano
+            )
+            # g.ax_heatmap.set_title(cell, fontsize=16, pad=20, y=1)
+            g.fig.suptitle(cell, fontsize=18, y=1.05)
+
+            plt.show()
+
 # def plot_pseudobulk(
 #     adata: ad.AnnData,
 #     x_key: str = 'scmusk',

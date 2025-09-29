@@ -17,12 +17,17 @@ from .shapes import (
     add_to_shapes,
     shapes_of_cell_type,
     add_metadata_to_shape,
-    alpha_shape,
+    shape_to_pseudobulk,
 )
 
 from .unfolding import (
     centerline,
     shapeToImg,
+)
+
+from .alpha_shape import (
+    # alpha_shape,
+    alpha_shape_optimal,
 )
 
 __all__ = [
@@ -39,8 +44,10 @@ __all__ = [
     "centerline",
     "shapeToImg",
     "add_metadata_to_shape",
-    "alpha_shape",
+    # "alpha_shape",
     "df_for_genes",
     "fromAxisMedialToDf",
     "orthogonalDistance",
+    "shape_to_pseudobulk",
+    "alpha_shape_optimal",
 ]
