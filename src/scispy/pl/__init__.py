@@ -13,6 +13,14 @@ from .basic import (
     plot_DE
 )
 
+from ._shapes import (
+    plot_shapes
+)
+
+from .transcripts import (
+    density_count_genes
+)
+
 __all__ = [
     "plot_shapes",
     "plot_shape_along_axis",
@@ -26,4 +34,6 @@ __all__ = [
     "stripPlotDE",
     "barplotDE",
     "plot_DE",
+    "plot_shapes",
+    "density_count_genes"
 ]

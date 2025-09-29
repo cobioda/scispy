@@ -2,27 +2,22 @@ import spatialdata as sd
 import pandas as pd
 import geopandas as gpd
 from spatialdata.models import ShapesModel
-from shapely import count_coordinates, get_coordinates, affinity
+from shapely import count_coordinates, get_coordinates
 from spatialdata.transformations import Identity, get_transformation
 import shapely
-from shapely.ops import unary_union, polygonize
-from scipy.spatial import Delaunay
 import numpy as np
-import math
-import warnings
 import anndata as ad
 import networkx as nx 
 import squidpy as sq 
-from anndata import AnnData
-from scipy.sparse import csr_matrix
-
+from ..tl.alpha_shape import alpha_shape_optimal
 # from shapely.ops import cascaded_union
 # from shapely.geometry import Polygon
 # from spatialdata.models import PointsModel
 # from shapely import count_coordinates
 # from shapely import count_coordinates, get_coordinates
-#  
-
+# from shapely import affinity
+# from anndata import AnnData
+# from scipy.sparse import csr_matrix
 
 def add_to_shapes(
     sdata: sd.SpatialData,
@@ -210,166 +205,6 @@ def shapes_of_cell_type(
 
 
 
-def alpha_shape(
-    points: list, 
-    alpha: float,
-    # threshold: int = None,
-    only_shape: bool = True,
-) -> tuple | shapely.Polygon | shapely.MultiPolygon:
-    """Compute the alpha shape of a set of points.
-    https://web.archive.org/web/20201013181320/http://blog.thehumangeo.com/2014/05/12/drawing-boundaries-in-python/
-    ; https://gist.github.com/dwyerk/10561690 ; https://gist.github.com/jclosure/d93f39a6c7b1f24f8b92252800182889#file-concave_hulls-ipynb 
-    ; https://github.com/mlichter2/concavity
-    
-    Parameters
-    ----------
-    points
-        List of cell centroids
-    alpha
-        Value to influence the gooeyness of the border. Smaller numbersdon't fall inward as much as larger numbers.
-        Too large, and you lose everything
-    threshold
-        Threshold to estimate the shape. Default none.
-    only_shape
-        By default return only the shape. If False return the shape with the edge_points (lines) 
-        and all_circum_r (radius of all the circumcircle )
-    
-    Returns
-    -------
-    By default return only the shape (Polygon or MultiPolygon). 
-    If only_shape is False return a tuple with the shape, all the lines used to calculate the shape 
-    and all the radii of the circumcircle.
-    """
-    if len(points) < 4:
-        # When you have a triangle, there is no sense
-        # in computing an alpha shape.
-        warnings.warn("Warning Message: Less than 4 points, simply compute the convex hull") 
-        return shapely.MultiPoint(points).convex_hull
-    
-    def add_edge(edges, edge_points, coords, i, j):
-        """
-        Add a line between the i-th and j-th points,
-        if not in the list already
-        """
-        if (i, j) in edges or (j, i) in edges:
-            # already added
-            return
-        edges.add( (i, j) )
-        edge_points.append(coords[ [i, j] ])
-        
-    # if threshold:
-    #     print('threshodl') 
-    #     seuil = threshold
-    # else:
-    #     print('alpha')
-    #     seuil = 1.0/alpha
-        
-    coords = np.array([point.coords[0]
-                       for point in points])
-    tri = Delaunay(coords)
-    edges = set()
-    edge_points = []
-    all_circum_r = []
-
-    for ia, ib, ic in tri.simplices: 
-        # ia, ib, ic = indices of corner points of the triangle
-        pa = coords[ia]
-        pb = coords[ib]
-        pc = coords[ic]
-        
-        # Lengths of sides of triangle
-        a = math.sqrt((pa[0]-pb[0])**2 + (pa[1]-pb[1])**2)
-        b = math.sqrt((pb[0]-pc[0])**2 + (pb[1]-pc[1])**2)
-        c = math.sqrt((pc[0]-pa[0])**2 + (pc[1]-pa[1])**2)
-        
-        s = (a + b + c)/2.0 # Semiperimeter of triangle
-        area = math.sqrt(s*(s-a)*(s-b)*(s-c)) # Area of triangle by Heron's formula
-        circum_r = a*b*c/(4.0*area) # radius of circumcircle
-        all_circum_r.append(circum_r)
-        
-        if circum_r < alpha:
-            add_edge(edges, edge_points, coords, ia, ib)
-            add_edge(edges, edge_points, coords, ib, ic)
-            add_edge(edges, edge_points, coords, ic, ia)
-            
-    m = shapely.MultiLineString(edge_points)
-    triangles = list(polygonize(m))
-    
-    if only_shape:
-        return unary_union(triangles)
-    else:
-        return unary_union(triangles), edge_points, all_circum_r
-
-
-def old_add_to_shapes(
-    sdata: sd.SpatialData,
-    shape_file: str,
-    shape_key: str = "myshapes",
-    scale_factor: float = 0.50825,  # if shapes comes from xenium explorer
-    target_coordinates: str = "microns",
-    **kwargs,
-):
-    """Add shape element to SpatialData.
-
-    Parameters
-    ----------
-    sdata
-        SpatialData object.
-    shape_file
-        coordinates.csv file from xenium explorer (region = "normal_1")
-        # vi coordinates.csv -> remove 2 first # lines
-        # dos2unix coordinates.csv
-    shape_key
-        key of element shape
-    scale_factor
-        scale factor conversion applied to x and y coordinates for real micron coordinates
-    target_coordinates
-        target_coordinates system
-
-    """
-    if shape_key in list(sdata.shapes.keys()):
-        print(f'Shape "{shape_key}" is already present in the object.')
-        return
-
-    d = {"geometry": [], "name": []}
-    df = pd.read_csv(shape_file, **kwargs) 
-    # if target_coordinates == 'global':
-    #     print(f'Convert shape in micron to pixels with a pixel size of : {pixel_size}')
-    #     df[['X', 'Y']] = df[['X', 'Y']] / pixel_size
-        
-    for name, group in df.groupby("Selection"):
-        if len(group) >= 3:
-            poly = shapely.Polygon(zip(group.X, group.Y))
-            d["geometry"].append(poly)
-            d["name"].append(name)
-        else:
-            print("Shape with less than 3 points")
-            
-    gdf = gpd.GeoDataFrame(d)
-
-    # scale because it comes from the xenium explorer !!!
-    gdf.geometry = gdf.geometry.scale(
-        xfact=scale_factor, yfact=scale_factor, origin=(0, 0)
-    )
-
-    # substract the initial image offset (x,y)
-    image_object_key = list(sdata.images.keys())[0]
-    matrix = sd.transformations.get_transformation(
-        sdata[image_object_key], target_coordinates
-    ).to_affine_matrix(input_axes=["x", "y"], output_axes=["x", "y"])
-    x_translation = matrix[0][2]
-    y_translation = matrix[1][2]
-    gdf.geometry = gdf.geometry.apply(
-        affinity.translate, xoff=x_translation, yoff=y_translation
-    )
-
-    sdata.shapes[shape_key] = ShapesModel.parse(
-        gdf, transformations ={target_coordinates: Identity()}
-    )
-    print(f"New shape added : '{shape_key}'")
-    return
-
-
 
 def count_in_shape(
     sdata: sd.SpatialData,
@@ -394,67 +229,9 @@ def count_in_shape(
     
     df_merge = gpd.sjoin(df_transcripts, sdata[shape_key], predicate=predicate, how=how)
     count = df_merge.groupby(feature_key).size().sort_index()
-
+    print("nb_genes : ", len(count), np.any(count == 0))
     return count.to_numpy()
 
-
-def remove_long_links(
-    adata: AnnData,
-    distance_percentile: float = 99.0,
-    connectivity_key: str | None = None,
-    distances_key: str | None = None,
-    neighs_key: str | None = None,
-    copy: bool = False,
-) -> tuple[csr_matrix, csr_matrix] | None:
-    """
-    Remove links between cells at a distance bigger than a certain percentile of all positive distances.
-
-    It is designed for data with generic coordinates.
-
-    Parameters
-    ----------
-    %(adata)s
-
-    distance_percentile
-        Percentile of the distances between cells over which links are trimmed after the network is built.
-    %(conn_key)s
-
-    distances_key
-        Key in :attr:`anndata.AnnData.obsp` where spatial distances are stored.
-        Default is: :attr:`anndata.AnnData.obsp` ``['{{Key.obsp.spatial_dist()}}']``.
-    neighs_key
-        Key in :attr:`anndata.AnnData.uns` where the parameters from gr.spatial_neighbors are stored.
-        Default is: :attr:`anndata.AnnData.uns` ``['{{Key.uns.spatial_neighs()}}']``.
-
-    %(copy)s
-
-    Returns
-    -------
-    If ``copy = True``, returns a :class:`tuple` with the new spatial connectivities and distances matrices.
-
-    Otherwise, modifies the ``adata`` with the following keys:
-        - :attr:`anndata.AnnData.obsp` ``['{{connectivity_key}}']`` - the new spatial connectivities.
-        - :attr:`anndata.AnnData.obsp` ``['{{distances_key}}']`` - the new spatial distances.
-        - :attr:`anndata.AnnData.uns`  ``['{{neighs_key}}']`` - :class:`dict` containing parameters.
-    """
-
-    conns, dists = adata.obsp[connectivity_key], adata.obsp[distances_key]
-
-    if copy:
-        conns, dists = conns.copy(), dists.copy()
-
-    threshold = np.percentile(np.array(dists[dists != 0]).squeeze(), distance_percentile)
-    conns[dists > threshold] = 0
-    dists[dists > threshold] = 0
-
-    conns.eliminate_zeros()
-    dists.eliminate_zeros()
-
-    if copy:
-        return conns, dists
-    else:
-        adata.uns[neighs_key]["params"]["radius"] = threshold
-    # print(threshold)
 
 
 def shape_to_pseudobulk(
@@ -462,15 +239,19 @@ def shape_to_pseudobulk(
     obs_val: int | str,
     obs_key: str,
     # library_key: str,
+    table_key: str = 'table',
     cell_id: str = 'cell_id',
-    convex_hull: bool = True,
     samples: list | None = None,
     metadata: list | None = None,
-    percentile: float = 99.0,
     scale_factor: float = 1.0,
-    connectivity_key: str ='spatial_connectivities',
+    convex_hull: bool = False,
+    only_shape: bool = True,
+    percentile: float = 99.0,
+    region: str = 'region',
+    option = 1,
+    connectivity_key: str ='spatial_connectivities', 
     distances_key: str ='spatial_distances',
-    neighs_key: str ='spatial_neighbors',
+    neighs_key: str ='spatial_neighbors',    
     save: bool = True,
 ):
     if not samples:
@@ -479,48 +260,39 @@ def shape_to_pseudobulk(
     shape_pseudo_counts = {}
     samples_meta_dict= {}
 
-    for n, table_key in enumerate(samples):
+    for _, table_key in enumerate(samples):
         print(table_key)
 
         id_sample = table_key.split('-')[1]
         transcript_key = f"transcripts-{id_sample}"
         shape_key = f"shape-{id_sample}" 
         shape_cells_key = sdata[table_key].uns['spatialdata_attrs']['region']
-        
+
+        if type(shape_cells_key) == list:
+            shape_cells_key = shape_cells_key[0]
+
         if type(obs_val) != list:
-            adata = sdata[table_key][sdata[table_key].obs[obs_key].isin([obs_val])].copy()
-        else:
-            adata = sdata[table_key][sdata[table_key].obs[obs_key].isin(obs_val)].copy()
+            obs_val = [obs_val]
 
         if metadata:
             metadata_dict = {col: sdata[table_key].obs[col].unique()[0] for col in metadata}
             samples_meta_dict[id_sample] = metadata_dict
 
-        if type(shape_cells_key) == list:
-            print(len(shape_cells_key))
-            shape_cells_key = shape_cells_key[0]
-
-        if convex_hull:
-            sq.gr.spatial_neighbors(adata, coord_type='generic', delaunay=True)
-            # sq.gr.spatial_neighbors(adata, library_key=library_key, coord_type='generic', delaunay=True)
-            remove_long_links(
-                adata,
-                distance_percentile = percentile,
-                connectivity_key=connectivity_key, 
-                distances_key=distances_key,
-                neighs_key=neighs_key)
-            G = nx.from_numpy_array(adata.obsp[connectivity_key].todense())
-            largest_cc = max(nx.connected_components(G), key=len)
-            sub_cells = adata[list(largest_cc),].obs[cell_id].values
-            print(len(sub_cells))
-            list_points = [poly.centroid for poly in sdata[shape_cells_key].loc[sub_cells,].geometry.values]
-            print(len(list_points))
-
-            shape = shapely.convex_hull(shapely.MultiPoint(list_points))
-        else:
-            print("Genereate alpha-shape")
-            print('Not adapted for the moment')
-            return
+        shape = alpha_shape_optimal(
+                sdata=sdata,
+                group_by = obs_key,
+                groups = obs_val,
+                table_key = table_key,
+                cell_id = cell_id,
+                convex_hull = convex_hull,
+                only_shape = only_shape,
+                percentile = percentile,
+                region = region,
+                connectivity_key = connectivity_key, 
+                distances_key = distances_key,
+                neighs_key = neighs_key,
+                option = option, 
+            )
         
         print('add shape')
         add_to_shapes(
@@ -558,3 +330,73 @@ def shape_to_pseudobulk(
             file = f'shape_pseudocount_{obs_key}_{obs_val}_per_samples'
         pdata_shapes.write(file + '.h5ad')
     return pdata_shapes
+
+
+
+# def old_add_to_shapes(
+#     sdata: sd.SpatialData,
+#     shape_file: str,
+#     shape_key: str = "myshapes",
+#     scale_factor: float = 0.50825,  # if shapes comes from xenium explorer
+#     target_coordinates: str = "microns",
+#     **kwargs,
+# ):
+#     """Add shape element to SpatialData.
+
+#     Parameters
+#     ----------
+#     sdata
+#         SpatialData object.
+#     shape_file
+#         coordinates.csv file from xenium explorer (region = "normal_1")
+#         # vi coordinates.csv -> remove 2 first # lines
+#         # dos2unix coordinates.csv
+#     shape_key
+#         key of element shape
+#     scale_factor
+#         scale factor conversion applied to x and y coordinates for real micron coordinates
+#     target_coordinates
+#         target_coordinates system
+
+#     """
+#     if shape_key in list(sdata.shapes.keys()):
+#         print(f'Shape "{shape_key}" is already present in the object.')
+#         return
+
+#     d = {"geometry": [], "name": []}
+#     df = pd.read_csv(shape_file, **kwargs) 
+#     # if target_coordinates == 'global':
+#     #     print(f'Convert shape in micron to pixels with a pixel size of : {pixel_size}')
+#     #     df[['X', 'Y']] = df[['X', 'Y']] / pixel_size
+        
+#     for name, group in df.groupby("Selection"):
+#         if len(group) >= 3:
+#             poly = shapely.Polygon(zip(group.X, group.Y))
+#             d["geometry"].append(poly)
+#             d["name"].append(name)
+#         else:
+#             print("Shape with less than 3 points")
+            
+#     gdf = gpd.GeoDataFrame(d)
+
+#     # scale because it comes from the xenium explorer !!!
+#     gdf.geometry = gdf.geometry.scale(
+#         xfact=scale_factor, yfact=scale_factor, origin=(0, 0)
+#     )
+
+#     # substract the initial image offset (x,y)
+#     image_object_key = list(sdata.images.keys())[0]
+#     matrix = sd.transformations.get_transformation(
+#         sdata[image_object_key], target_coordinates
+#     ).to_affine_matrix(input_axes=["x", "y"], output_axes=["x", "y"])
+#     x_translation = matrix[0][2]
+#     y_translation = matrix[1][2]
+#     gdf.geometry = gdf.geometry.apply(
+#         affinity.translate, xoff=x_translation, yoff=y_translation
+#     )
+
+#     sdata.shapes[shape_key] = ShapesModel.parse(
+#         gdf, transformations ={target_coordinates: Identity()}
+#     )
+#     print(f"New shape added : '{shape_key}'")
+#     return
