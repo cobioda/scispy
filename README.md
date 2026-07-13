@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://sparty.readthedocs.io/en/latest/" target="_blank">Documentation</a> •
-  <a href="https://sparty.readthedocs.io/en/latest/docs/notebooks/example.ipynb" target="_blank">Examples</a> •
+  <a href="https://sparty.readthedocs.io/en/latest/tutorials.html" target="_blank">Examples</a> •
   <a href="https://www.biorxiv.org/" target="_blank">Preprint</a>
 </p>
 
@@ -69,4 +69,4 @@ If you found a bug or you want to propose a new feature, please use the [issue t
 [changelog]: https://sparty.readthedocs.io/en/latest/changelog.html
 [link-docs]: https://sparty.readthedocs.io
 [link-api]: https://sparty.readthedocs.io/en/latest/api.html
-[link-tutorial]: https://sparty.readthedocs.io/en/latest/notebooks/tutorial.html
+[link-tutorial]: https://sparty.readthedocs.io/en/latest/tutorials.html
