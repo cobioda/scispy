@@ -9,7 +9,6 @@
 tutorials.md
 api.md
 changelog.md
-template_usage.md
 contributing.md
 references.md
 
