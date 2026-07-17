@@ -1,5 +1,5 @@
 name: Feature request
-description: Propose a new feature for scispy
+description: Propose a new feature for sparty
 labels: enhancement
 body:
   - type: textarea

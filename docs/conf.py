@@ -1,14 +1,17 @@
 # Configuration file for the Sphinx documentation builder.
-#
+
 # This file only contains a selection of the most common options. For a full
 # list see the documentation:
-# https://www.sphinx-doc.org/en/master/usage/configuration.html
+# https://www.sphinx-doc.org/page/usage/configuration.html
 
 # -- Path setup --------------------------------------------------------------
+import shutil
 import sys
 from datetime import datetime
 from importlib.metadata import metadata
 from pathlib import Path
+
+from sphinxcontrib import katex
 
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE / "extensions"))
@@ -18,8 +21,8 @@ sys.path.insert(0, str(HERE / "extensions"))
 
 # NOTE: If you installed your project in editable mode, this might be stale.
 #       If this is the case, reinstall it to refresh the metadata
-info = metadata("scispy")
-project_name = info["Name"]
+info = metadata("sparty")
+project = info["Name"]
 author = info["Author"]
 copyright = f"{datetime.now():%Y}, {author}."
 version = info["Version"]
@@ -36,10 +39,10 @@ needs_sphinx = "4.0"
 
 html_context = {
     "display_github": True,  # Integrate GitHub
-    "github_user": "bfxomics",  # Username
-    "github_repo": project_name,  # Repo name
-    "github_version": "main",  # Version
-    "conf_py_path": "/docs/",  # Path in the checkout to the docs root
+    "github_user": "cobioda",
+    "github_repo": project,
+    "github_version": "main",
+    "conf_py_path": "/docs/",
 }
 
 # -- General configuration ---------------------------------------------------
@@ -54,9 +57,12 @@ extensions = [
     "sphinx.ext.autosummary",
     "sphinx.ext.napoleon",
     "sphinxcontrib.bibtex",
+    "sphinxcontrib.katex",
     "sphinx_autodoc_typehints",
-    "sphinx.ext.mathjax",
+    "sphinx_design",
     "IPython.sphinxext.ipython_console_highlighting",
+    "sphinxext.opengraph",
+    "scverse_misc.sphinx_ext",
     *[p.stem for p in (HERE / "extensions").glob("*.py")],
 ]
 
@@ -82,6 +88,7 @@ nb_output_stderr = "remove"
 nb_execution_mode = "off"
 nb_merge_streams = True
 typehints_defaults = "braces"
+always_use_bars_union = True  # use `|` instead of `Union` in types even when building with Python ≤3.14
 
 source_suffix = {
     ".rst": "restructuredtext",
@@ -91,7 +98,8 @@ source_suffix = {
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
-    "anndata": ("https://anndata.readthedocs.io/en/stable/", None),
+    "anndata": ("https://anndata.scverse.org/en/stable/", None),
+    "scanpy": ("https://scanpy.scverse.org/en/stable/", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
 }
 
@@ -108,33 +116,22 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints"]
 #
 html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
-html_title = project_name
+html_css_files = ["css/custom.css"]
+
+html_title = project
 
 html_theme_options = {
     "repository_url": repository_url,
     "use_repository_button": True,
     "path_to_docs": "docs/",
+    "navigation_with_keys": False,
 }
 
 pygments_style = "default"
+katex_prerender = shutil.which(katex.NODEJS_BINARY) is not None
 
 nitpick_ignore = [
     # If building the documentation fails because of a missing link that is outside your control,
     # you can add an exception to this list.
     #     ("py:class", "igraph.Graph"),
 ]
-
-
-def setup(app):
-    """App setup hook."""
-    app.add_config_value(
-        "recommonmark_config",
-        {
-            "auto_toc_tree_section": "Contents",
-            "enable_auto_toc_tree": True,
-            "enable_math": True,
-            "enable_inline_math": False,
-            "enable_eval_rst": True,
-        },
-        True,
-    )
